@@ -1,0 +1,33 @@
+[package]
+name = "embassy-ra"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+embassy-sync = { path = "../embassy-sync" }
+embassy-time = { path = "../embassy-time" }
+embassy-hal-internal = { path = "../embassy-hal-internal" }
+embassy-usb-driver = { path = "../embassy-usb-driver", optional = true }
+ra-metapac = { path = "../../ra-data/build/ra-metapac", features = ["rt", "metadata"] }
+
+[build-dependencies]
+ra-metapac = { path = "../../ra-data/build/ra-metapac", features = ["metadata"] }
+
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.3"
+embedded-hal = "1.0"
+embedded-hal-async = "1.0"
+embedded-hal-nb = "1.0"
+embedded-io = "0.6"
+embedded-io-async = "0.6"
+defmt = { version = "0.3", optional = true }
+log = { version = "0.4", optional = true }
+critical-section = "1.1"
+
+[features]
+default = []
+defmt = ["dep:defmt", "embassy-sync/defmt", "embassy-time/defmt", "ra-metapac/defmt"]
+log = ["dep:log"]
+
+r7fa6e2bb3cfm = ["ra-metapac/r7fa6e2bb3cfm"]
