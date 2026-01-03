@@ -3,6 +3,7 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_time::Timer;
 use embassy_ra as hal;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -33,7 +34,6 @@ async fn main(_spawner: Spawner) {
 
     loop {
         info!("tick1");
-        // Timer::after_secs(1).await;
-        cortex_m::asm::nop();
+        Timer::after_secs(1).await;
     }
 }
