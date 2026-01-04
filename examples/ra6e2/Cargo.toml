@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-embassy-ra = { path = "../../embassy-ra", features = ["r7fa6e2bb3cfm", "defmt"] }
+embassy-ra = { path = "../../embassy-ra", features = ["r7fa6e2bb3cfm", "defmt", "_time-driver"] }
 embassy-executor = { path = "../../embassy-executor", features = ["arch-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { path = "../../embassy-time", features = ["defmt", "tick-hz-8_000_000"] }
 
