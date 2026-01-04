@@ -5,9 +5,13 @@ use critical_section::{CriticalSection, Mutex};
 use cortex_m::interrupt::InterruptNumber;
 use embassy_time_driver::Driver;
 use embassy_time_queue_utils::Queue;
-use defmt::*;
 use crate::interrupt::{Event, InterruptRegistry, InterruptExt};
 use crate::peripherals;
+
+#[cfg(feature = "defmt")]
+use defmt::*;
+#[cfg(not(feature = "defmt"))]
+use log::*;
 
 crate::bind_interrupts!(pub struct Irqs {
     Gpt0CounterOverflow => InterruptHandler<peripherals::GPT0>;
@@ -29,12 +33,17 @@ embassy_time_driver::time_driver_impl!(static DRIVER: TimerDriver = TimerDriver 
 impl Driver for TimerDriver {
     fn now(&self) -> u64 {
         let gpt = unsafe { peripherals::GPT0::steal() };
+        let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
         loop {
             let hi = self.overflow_count.load(Ordering::Acquire);
-            let lo = gpt.gtcnt().read() as u16;
+            let lo = gpt.gtcnt().read();
             let hi2 = self.overflow_count.load(Ordering::Acquire);
             if hi == hi2 {
-                return (hi as u64) << 16 | (lo as u64);
+                if bit_width == 32 {
+                    return (hi as u64) << 32 | (lo as u64);
+                } else {
+                    return (hi as u64) << 16 | (lo as u64);
+                }
             }
         }
     }
@@ -54,18 +63,21 @@ impl Driver for TimerDriver {
 impl TimerDriver {
     fn init(&'static self, _cs: CriticalSection) {
         let gpt = unsafe { peripherals::GPT0::steal() };
-        let mstp = unsafe { peripherals::MSTP::steal() };
         let icu = unsafe { peripherals::ICU::steal() };
-        debug!("Timer driver init (16-bit, 8MHz)");
+        let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
+        debug!("Timer driver init ({}-bit, 8MHz)", bit_width);
         // Enable GPT0 clock
-        // MSTPCRE bit 31 is GPT0
-        mstp.mstpcre().modify(|w| w.set_mstpe31(false));
+        unsafe { crate::mstp::enable_clock(peripherals::GPT0::steal()) };
 
         // Stop timer
         gpt.gtcr().modify(|w| w.set_cst(false));
 
-        // Set period to max 16-bit
-        gpt.gtpr().write_value(0x0000_FFFF);
+        // Set period to max
+        if bit_width == 32 {
+            gpt.gtpr().write_value(0xFFFF_FFFF);
+        } else {
+            gpt.gtpr().write_value(0x0000_FFFF);
+        }
         gpt.gtcnt().write_value(0);
 
         // Get assigned IELs
@@ -103,6 +115,7 @@ impl TimerDriver {
 
     fn set_alarm(&self, at: u64) {
         let gpt = unsafe { peripherals::GPT0::steal() };
+        let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
         
         let now = self.now();
         if at <= now {
@@ -111,12 +124,12 @@ impl TimerDriver {
         }
 
         let diff = at - now;
-        if diff < 0xFFFF {
-            // Target is in the current or next 16-bit cycle.
-            gpt.gtccra().write_value((at & 0xFFFF) as u32);
+        let max_diff = if bit_width == 32 { 0xFFFF_FFFF } else { 0x0000_FFFF };
+        
+        if diff < max_diff {
+            gpt.gtccra().write_value((at & max_diff) as u32);
         } else {
-            // Too far away, let overflow handle it.
-            gpt.gtccra().write_value(0xFFFF);
+            gpt.gtccra().write_value(max_diff as u32);
         }
     }
 }
