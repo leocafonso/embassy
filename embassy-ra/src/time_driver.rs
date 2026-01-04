@@ -8,7 +8,13 @@ use embassy_time_queue_utils::Queue;
 use defmt::*;
 use crate::interrupt::{Event, InterruptRegistry, InterruptExt};
 use crate::peripherals;
-use crate::Irqs;
+
+crate::bind_interrupts!(pub struct Irqs {
+    Gpt0CounterOverflow => InterruptHandler<peripherals::GPT0>;
+    Gpt0CaptureCompareA => InterruptHandler<peripherals::GPT0>;
+});
+
+pub static IRQS: Irqs = Irqs;
 
 struct TimerDriver {
     overflow_count: AtomicU32,
@@ -64,16 +70,16 @@ impl TimerDriver {
 
         // Get assigned IELs
         use crate::interrupt::typelevel::Interrupt;
-        let irq_ovf = <Irqs as InterruptRegistry<crate::interrupt::events::Gpt0Ovf>>::Interrupt::IRQ;
-        let irq_ccmpa = <Irqs as InterruptRegistry<crate::interrupt::events::Gpt0Ccmpa>>::Interrupt::IRQ;
+        let irq_ovf = <Irqs as InterruptRegistry<crate::interrupt::events::Gpt0CounterOverflow>>::Interrupt::IRQ;
+        let irq_ccmpa = <Irqs as InterruptRegistry<crate::interrupt::events::Gpt0CaptureCompareA>>::Interrupt::IRQ;
 
         let idx_ovf = irq_ovf.number() as usize;
         let idx_ccmpa = irq_ccmpa.number() as usize;
 
         // Map Gpt0Ovf (0x14) to assigned IEL
-        icu.ielsr(idx_ovf).write_value(crate::interrupt::events::Gpt0Ovf::ID as u32);
+        icu.ielsr(idx_ovf).write_value(crate::interrupt::events::Gpt0CounterOverflow::ID as u32);
         // Map Gpt0Ccmpa (0x15) to assigned IEL
-        icu.ielsr(idx_ccmpa).write_value(crate::interrupt::events::Gpt0Ccmpa::ID as u32);
+        icu.ielsr(idx_ccmpa).write_value(crate::interrupt::events::Gpt0CaptureCompareA::ID as u32);
 
         // Clear any pending interrupts in ICU
         icu.ielsr(idx_ovf).modify(|w| *w &= !(1 << 16));
@@ -117,7 +123,7 @@ impl TimerDriver {
 
 pub struct InterruptHandler<T>(core::marker::PhantomData<T>);
 
-impl<T> crate::interrupt::Handler<crate::interrupt::events::Gpt0Ovf>
+impl<T> crate::interrupt::Handler<crate::interrupt::events::Gpt0CounterOverflow>
     for InterruptHandler<T>
 {
     unsafe fn on_interrupt() {
@@ -125,7 +131,7 @@ impl<T> crate::interrupt::Handler<crate::interrupt::events::Gpt0Ovf>
     }
 }
 
-impl<T> crate::interrupt::Handler<crate::interrupt::events::Gpt0Ccmpa>
+impl<T> crate::interrupt::Handler<crate::interrupt::events::Gpt0CaptureCompareA>
     for InterruptHandler<T>
 {
     unsafe fn on_interrupt() {

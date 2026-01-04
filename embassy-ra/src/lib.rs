@@ -6,6 +6,7 @@ pub use embassy_hal_internal::{impl_peripheral, Peri as PeripheralRef, Periphera
 
 pub mod interrupt;
 
+#[cfg(feature = "_time-driver")]
 mod time_driver;
 
 pub mod peripherals {
@@ -26,17 +27,13 @@ impl Default for Config {
     }
 }
 
-bind_interrupts!(pub struct Irqs {
-    Gpt0Ovf => time_driver::InterruptHandler<peripherals::GPT0>;
-    Gpt0Ccmpa => time_driver::InterruptHandler<peripherals::GPT0>;
-});
-
-pub static IRQS: Irqs = Irqs;
+#[cfg(feature = "_time-driver")]
+pub use time_driver::{Irqs, IRQS};
 
 pub fn init(_config: Config) -> peripherals::Peripherals {
     critical_section::with(|cs| {
         // TODO: Initialize clocks, etc.
-        // #[cfg(feature = "_time-driver")]
+        #[cfg(feature = "_time-driver")]
         time_driver::init(cs);
         unsafe { peripherals::Peripherals::steal() }
     })

@@ -34,6 +34,6 @@ async fn main(_spawner: Spawner) {
 
     loop {
         info!("tick1");
-        Timer::after_secs(1).await;
+        Timer::after_millis(500).await;
     }
 }

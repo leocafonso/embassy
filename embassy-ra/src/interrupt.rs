@@ -1,16 +1,16 @@
 pub use embassy_hal_internal::interrupt::{InterruptExt, Priority};
 
-embassy_hal_internal::interrupt_mod!(
-    IEL0, IEL1, IEL2, IEL3, IEL4, IEL5, IEL6, IEL7,
-    IEL8, IEL9, IEL10, IEL11, IEL12, IEL13, IEL14, IEL15,
-    IEL16, IEL17, IEL18, IEL19, IEL20, IEL21, IEL22, IEL23,
-    IEL24, IEL25, IEL26, IEL27, IEL28, IEL29, IEL30, IEL31
-);
+macro_rules! irq_mod {
+    ($($irq:ident = $num:expr,)*) => {
+        embassy_hal_internal::interrupt_mod!($($irq),*);
+    };
+}
+crate::pac::foreach_interrupt!(irq_mod);
 
 pub use self::interrupt::*;
 
 pub trait Event {
-    const ID: u8;
+    const ID: u16;
 }
 
 pub trait InterruptRegistry<E: Event> {
@@ -26,15 +26,18 @@ pub unsafe trait Binding<E: Event, H: Handler<E>> {}
 pub mod events {
     use super::Event;
 
-    pub struct Gpt0Ovf;
-    impl Event for Gpt0Ovf {
-        const ID: u8 = 0xc6;
+    macro_rules! event_structs {
+        ($($name:ident = $id:expr,)*) => {
+            $(
+                pub struct $name;
+                impl Event for $name {
+                    const ID: u16 = $id;
+                }
+            )*
+        };
     }
 
-    pub struct Gpt0Ccmpa;
-    impl Event for Gpt0Ccmpa {
-        const ID: u8 = 0xc0;
-    }
+    crate::pac::foreach_event!(event_structs);
 }
 
 #[macro_export]
@@ -46,7 +49,11 @@ macro_rules! bind_interrupts {
     }) => {
         $vis struct $name;
 
-        $crate::bind_interrupts!(@inner $name, (IEL0 IEL1 IEL2 IEL3 IEL4 IEL5 IEL6 IEL7 IEL8 IEL9 IEL10 IEL11 IEL12 IEL13 IEL14 IEL15 IEL16 IEL17 IEL18 IEL19 IEL20 IEL21 IEL22 IEL23 IEL24 IEL25 IEL26 IEL27 IEL28 IEL29 IEL30 IEL31), $($event => $handler;)*);
+        $crate::pac::foreach_interrupt!($crate::bind_interrupts, @foreach $name, $($event => $handler;)*);
+    };
+
+    (@foreach $name:ident, $($event:ident => $handler:ty;)* { $($irq:ident = $num:expr,)* }) => {
+        $crate::bind_interrupts!(@inner $name, ($($irq)*), $($event => $handler;)*);
     };
 
     (@inner $name:ident, ($iel:ident $($rest_iel:ident)*), $event:ident => $handler:ty; $($rest:tt)*) => {
