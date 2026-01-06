@@ -11,7 +11,9 @@ embassy-time = { path = "../embassy-time" }
 embassy-time-driver = { path = "../embassy-time-driver" }
 embassy-time-queue-utils = { path = "../embassy-time-queue-utils" }
 embassy-hal-internal = { path = "../embassy-hal-internal", features = ["cortex-m", "prio-bits-3"] }
-ra-metapac = { path = "../../ra-data/build/ra-metapac", features = ["metadata", "embassy"] }
+# ra-metapac = { path = "../../ra-data/build/ra-metapac", features = ["metadata", "embassy"] }
+ra-metapac = { git = "https://github.com/leocafonso/ra-data-generated.git", features = ["metadata", "embassy"] }
+
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.3"
 critical-section = "1.1"
@@ -23,7 +25,8 @@ defmt-rtt = { version = "0.4", optional = true }
 panic-probe = { version = "0.3", features = ["print-defmt"], optional = true }
 
 [build-dependencies]
-ra-metapac = { path = "../../ra-data/build/ra-metapac", features = ["metadata"] }
+# ra-metapac = { path = "../../ra-data/build/ra-metapac", features = ["metadata"] }
+ra-metapac = { git = "https://github.com/leocafonso/ra-data-generated.git", features = ["metadata"] }
 
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
