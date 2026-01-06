@@ -29,11 +29,18 @@ pub static PBPS0: u32 = 0xFFFF_FFFF;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let _p = hal::init(Default::default());
+    let p = hal::init(Default::default());
     info!("Hello World!");
 
+    let mut led = hal::gpio::Output::new(p.p104, hal::gpio::Level::Low);
+
     loop {
-        info!("tick1");
-        Timer::after_millis(500).await;
+        info!("high");
+        led.set_high();
+        Timer::after_millis(100).await;
+
+        info!("low");
+        led.set_low();
+        Timer::after_millis(100).await;
     }
 }

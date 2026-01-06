@@ -6,6 +6,7 @@ pub use embassy_hal_internal::{impl_peripheral, Peri as PeripheralRef, Periphera
 
 pub mod interrupt;
 pub mod mstp;
+pub mod gpio;
 
 #[cfg(feature = "_time-driver")]
 mod time_driver;
