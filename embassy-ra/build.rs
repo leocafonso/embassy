@@ -18,6 +18,23 @@ fn main() {
 
         use std::fmt::Write;
         let mut memory_x = String::new();
+
+        let flash_region = metadata::MEMORY.iter().find(|r| r.name == "FLASH").unwrap();
+        let mut overlaps = Vec::new();
+        for region in metadata::MEMORY {
+            if region.name.starts_with("OPTION_SETTING_") {
+                if region.address >= flash_region.address && region.address < flash_region.address + flash_region.size {
+                    overlaps.push(region);
+                }
+            }
+        }
+
+        if !overlaps.is_empty() {
+            let last_region = overlaps.iter().max_by_key(|r| r.address + r.size).unwrap();
+            let end_addr = last_region.address + last_region.size;
+            writeln!(memory_x, "_stext = 0x{:08x};", end_addr).unwrap();
+        }
+
         writeln!(memory_x, "MEMORY").unwrap();
         writeln!(memory_x, "{{").unwrap();
 
@@ -39,10 +56,21 @@ fn main() {
 
         writeln!(memory_x, "SECTIONS").unwrap();
         writeln!(memory_x, "{{").unwrap();
+
         for region in metadata::MEMORY {
             if region.name.starts_with("OPTION_SETTING_") {
                 let section_name = region.name.strip_prefix("OPTION_SETTING_").unwrap().to_lowercase();
-                writeln!(memory_x, "    .{} : {{ KEEP(*(.{})) }} > {}", section_name, section_name, region.name).unwrap();
+                if overlaps.iter().any(|o| o.name == region.name) {
+                    writeln!(
+                        memory_x,
+                        "    .{} 0x{:08x} : {{ KEEP(*(.{})) }} > FLASH",
+                        section_name, region.address, section_name
+                    )
+                    .unwrap();
+                } else {
+                    writeln!(memory_x, "    .{} : {{ KEEP(*(.{})) }} > {}", section_name, section_name, region.name)
+                        .unwrap();
+                }
             }
         }
         writeln!(memory_x, "}}").unwrap();

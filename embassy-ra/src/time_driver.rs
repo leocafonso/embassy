@@ -88,6 +88,10 @@ impl TimerDriver {
         let idx_ovf = irq_ovf.number() as usize;
         let idx_ccmpa = irq_ccmpa.number() as usize;
 
+        // RA2E1 uses a different event strcture for ICU
+        // icu.ielsr(idx_ovf).write_value(0x0e as u32);
+        // icu.ielsr(idx_ccmpa).write_value(0x0e as u32);
+
         // Map Gpt0Ovf (0x14) to assigned IEL
         icu.ielsr(idx_ovf).write_value(crate::interrupt::events::Gpt0CounterOverflow::ID as u32);
         // Map Gpt0Ccmpa (0x15) to assigned IEL
