@@ -2,10 +2,8 @@ use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use critical_section::{CriticalSection, Mutex};
-use cortex_m::interrupt::InterruptNumber;
 use embassy_time_driver::Driver;
 use embassy_time_queue_utils::Queue;
-use crate::interrupt::{Event, InterruptRegistry, InterruptExt};
 use crate::peripherals;
 
 #[cfg(feature = "defmt")]
@@ -13,12 +11,18 @@ use defmt::*;
 #[cfg(not(feature = "defmt"))]
 use log::*;
 
-crate::bind_interrupts!(pub struct Irqs {
-    Gpt0CounterOverflow => InterruptHandler<peripherals::GPT0>;
-    Gpt0CaptureCompareA => InterruptHandler<peripherals::GPT0>;
-});
+// Include auto-generated IRQ bindings from build.rs
+include!(concat!(env!("OUT_DIR"), "/irq_bindings.rs"));
 
-pub static IRQS: Irqs = Irqs;
+// Simple interrupt number struct for NVIC operations
+#[derive(Copy, Clone)]
+struct IrqNum(u16);
+
+unsafe impl cortex_m::interrupt::InterruptNumber for IrqNum {
+    fn number(self) -> u16 {
+        self.0
+    }
+}
 
 struct TimerDriver {
     overflow_count: AtomicU32,
@@ -80,22 +84,13 @@ impl TimerDriver {
         }
         gpt.gtcnt().write_value(0);
 
-        // Get assigned IELs
-        use crate::interrupt::typelevel::Interrupt;
-        let irq_ovf = <Irqs as InterruptRegistry<crate::interrupt::events::Gpt0CounterOverflow>>::Interrupt::IRQ;
-        let irq_ccmpa = <Irqs as InterruptRegistry<crate::interrupt::events::Gpt0CaptureCompareA>>::Interrupt::IRQ;
+        // Get auto-allocated IRQ slots from build.rs
+        let idx_ovf = irq_allocations::GPT0_COUNTER_OVERFLOW_IRQ as usize;
+        let idx_ccmpa = irq_allocations::GPT0_CAPTURE_COMPARE_A_IRQ as usize;
 
-        let idx_ovf = irq_ovf.number() as usize;
-        let idx_ccmpa = irq_ccmpa.number() as usize;
-
-        // RA2E1 uses a different event strcture for ICU
-        // icu.ielsr(idx_ovf).write_value(0x0e as u32);
-        // icu.ielsr(idx_ccmpa).write_value(0x0e as u32);
-
-        // Map Gpt0Ovf (0x14) to assigned IEL
-        icu.ielsr(idx_ovf).write_value(crate::interrupt::events::Gpt0CounterOverflow::ID as u32);
-        // Map Gpt0Ccmpa (0x15) to assigned IEL
-        icu.ielsr(idx_ccmpa).write_value(crate::interrupt::events::Gpt0CaptureCompareA::ID as u32);
+        // Map events to allocated IELSR slots using auto-generated event IDs
+        icu.ielsr(idx_ovf).write_value(event_ids::GPT0_COUNTER_OVERFLOW as u32);
+        icu.ielsr(idx_ccmpa).write_value(event_ids::GPT0_CAPTURE_COMPARE_A as u32);
 
         // Clear any pending interrupts in ICU
         icu.ielsr(idx_ovf).modify(|w| *w &= !(1 << 16));
@@ -107,10 +102,10 @@ impl TimerDriver {
             w.set_gtinta(true); // Compare Match A
         });
 
-        // Enable interrupts in NVIC
+        // Enable interrupts in NVIC using auto-allocated IRQ numbers
         unsafe {
-            irq_ovf.enable();
-            irq_ccmpa.enable();
+            cortex_m::peripheral::NVIC::unmask(IrqNum(idx_ovf as u16));
+            cortex_m::peripheral::NVIC::unmask(IrqNum(idx_ccmpa as u16));
         }
 
         // Start timer
@@ -135,24 +130,6 @@ impl TimerDriver {
         } else {
             gpt.gtccra().write_value(max_diff as u32);
         }
-    }
-}
-
-pub struct InterruptHandler<T>(core::marker::PhantomData<T>);
-
-impl<T> crate::interrupt::Handler<crate::interrupt::events::Gpt0CounterOverflow>
-    for InterruptHandler<T>
-{
-    unsafe fn on_interrupt() {
-        on_interrupt();
-    }
-}
-
-impl<T> crate::interrupt::Handler<crate::interrupt::events::Gpt0CaptureCompareA>
-    for InterruptHandler<T>
-{
-    unsafe fn on_interrupt() {
-        on_interrupt();
     }
 }
 
