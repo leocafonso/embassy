@@ -29,9 +29,6 @@ impl Default for Config {
     }
 }
 
-#[cfg(feature = "_time-driver")]
-pub use time_driver::{Irqs, IRQS};
-
 pub fn init(_config: Config) -> peripherals::Peripherals {
     critical_section::with(|_cs| {
         // TODO: Initialize clocks, etc.

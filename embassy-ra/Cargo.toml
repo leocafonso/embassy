@@ -50,6 +50,27 @@ _time-driver = []
 defmt = ["dep:defmt", "embassy-sync/defmt", "embassy-time/defmt", "ra-metapac/defmt"]
 log = ["dep:log"]
 
+# Time driver selection
+time-driver-gpt0 = ["_time-driver"]
+time-driver-gpt1 = ["_time-driver"]
+time-driver-gpt2 = ["_time-driver"]
+time-driver-gpt3 = ["_time-driver"]
+
+# Peripheral driver features
+sci-uart0 = []
+sci-uart1 = []
+sci-uart2 = []
+sci-uart3 = []
+sci-uart4 = []
+sci-uart9 = []
+iic0 = []
+iic1 = []
+iic2 = []
+spi0 = []
+spi1 = []
+adc0 = []
+adc1 = []
+
 r7fa0e1053cfj = ["ra-metapac/r7fa0e1053cfj"]
 r7fa0e1053cnh = ["ra-metapac/r7fa0e1053cnh"]
 r7fa0e1053cnk = ["ra-metapac/r7fa0e1053cnk"]
