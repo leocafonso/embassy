@@ -130,36 +130,72 @@ impl MstpRE for pac::_peripherals::mstp_v2::Mstp {
 }
 impl MstpRE for pac::_peripherals::mstp_v3::Mstp {}
 
-// SYSTEM versions
-impl MstpRA for pac::_peripherals::system_v1::Sysc {
-    unsafe fn modify_a(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcra().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
+// SYSC versions with MSTPCRA
+macro_rules! impl_sysc_with_mstpcra {
+    ($($version:ident),*) => {
+        $(
+            impl MstpRA for pac::_peripherals::$version::Sysc {
+                unsafe fn modify_a(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
+                    self.mstpcra().modify(|w| {
+                        let mut val = w.0 as u32;
+                        f(&mut val);
+                        w.0 = val as _;
+                    })
+                }
+            }
+        )*
+    };
 }
-impl MstpRA for pac::_peripherals::system_v2::System {
-    unsafe fn modify_a(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcra().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
+
+// SYSC versions without MSTPCRA (empty impl)
+macro_rules! impl_sysc_without_mstpcra {
+    ($($version:ident),*) => {
+        $(
+            impl MstpRA for pac::_peripherals::$version::Sysc {}
+        )*
+    };
 }
-impl MstpRA for pac::_peripherals::system_v3::Sysc {}
-impl MstpRA for pac::_peripherals::system_v4::System {
-    unsafe fn modify_a(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcra().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRA for pac::_peripherals::system_v5::Sysc {}
+
+// SYSC versions that have MSTPCRA
+impl_sysc_with_mstpcra!(
+    sysc_ra0,
+    sysc_ra2a1,
+    sysc_ra2a2,
+    sysc_ra2e1,
+    sysc_ra2e2,
+    sysc_ra2l1,
+    sysc_ra2t1,
+    sysc_ra4m1,
+    sysc_ra4w1,
+    sysc_ra6m1,
+    sysc_ra6m2,
+    sysc_ra6t1
+);
+
+// SYSC versions that don't have MSTPCRA
+impl_sysc_without_mstpcra!(
+    sysc_ra4c1,
+    sysc_ra4e1,
+    sysc_ra4e2,
+    sysc_ra4l1,
+    sysc_ra4m2,
+    sysc_ra4m3,
+    sysc_ra4t1,
+    sysc_ra6e1,
+    sysc_ra6m4,
+    sysc_ra6m5,
+    sysc_ra6t2,
+    sysc_ra6t3,
+    sysc_ra8d1,
+    sysc_ra8e1,
+    sysc_ra8e2,
+    sysc_ra8m1,
+    sysc_ra8t1,
+    sysc_rka8d2,
+    sysc_rka8m2,
+    sysc_rka8p1,
+    sysc_rka8t2
+);
 
 pub trait SealedPeripheral {
     fn metadata() -> &'static pac::metadata::Peripheral;
@@ -192,8 +228,8 @@ pub unsafe fn enable_clock<T: Peripheral>(_peri: T) {
                     (MSTP) => {
                         pac::peripherals::MSTP::steal().modify_a(bit, |r| *r &= !(1 << bit));
                     };
-                    (SYSTEM) => {
-                        pac::peripherals::SYSTEM::steal().modify_a(bit, |r| *r &= !(1 << bit));
+                    (SYSC) => {
+                        pac::peripherals::SYSC::steal().modify_a(bit, |r| *r &= !(1 << bit));
                     };
                     ($other:ident) => {};
                 }
@@ -275,8 +311,8 @@ pub unsafe fn disable_clock<T: Peripheral>(_peri: T) {
                     (MSTP) => {
                         pac::peripherals::MSTP::steal().modify_a(bit, |r| *r |= 1 << bit);
                     };
-                    (SYSTEM) => {
-                        pac::peripherals::SYSTEM::steal().modify_a(bit, |r| *r |= 1 << bit);
+                    (SYSC) => {
+                        pac::peripherals::SYSC::steal().modify_a(bit, |r| *r |= 1 << bit);
                     };
                     ($other:ident) => {};
                 }
