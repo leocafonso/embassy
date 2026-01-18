@@ -7,7 +7,50 @@
 
 use core::mem::MaybeUninit;
 
-use crate::pac::peripherals;
+// ============================================================================
+// Family-specific modules
+// ============================================================================
+
+// RA2 family (RA2E1, RA2E2, RA2L1)
+#[cfg(any(ra2e1, ra2e2, ra2l1))]
+mod ra2;
+#[cfg(any(ra2e1, ra2e2, ra2l1))]
+pub use ra2::Config;
+#[cfg(any(ra2e1, ra2e2, ra2l1))]
+pub(crate) use ra2::init;
+
+// RA4 family (RA4M1, RA4M2, RA4M3, RA4E1, RA4E2, RA4W1)
+#[cfg(any(ra4m1, ra4m2, ra4m3, ra4e1, ra4e2, ra4w1))]
+mod ra4;
+#[cfg(any(ra4m1, ra4m2, ra4m3, ra4e1, ra4e2, ra4w1))]
+pub use ra4::Config;
+#[cfg(any(ra4m1, ra4m2, ra4m3, ra4e1, ra4e2, ra4w1))]
+pub(crate) use ra4::init;
+
+// RA6 family (RA6M1, RA6M2, RA6M3, RA6M4, RA6M5, RA6E1, RA6E2, RA6T1, RA6T2)
+#[cfg(any(ra6m1, ra6m2, ra6m3, ra6m4, ra6m5, ra6e1, ra6e2, ra6t1, ra6t2))]
+mod ra6;
+#[cfg(any(ra6m1, ra6m2, ra6m3, ra6m4, ra6m5, ra6e1, ra6e2, ra6t1, ra6t2))]
+pub use ra6::Config;
+#[cfg(any(ra6m1, ra6m2, ra6m3, ra6m4, ra6m5, ra6e1, ra6e2, ra6t1, ra6t2))]
+pub(crate) use ra6::init;
+
+// RA8 family (RA8M1, RA8D1, RA8E1, RA8T1)
+#[cfg(any(ra8m1, ra8d1, ra8e1, ra8t1))]
+mod ra8;
+#[cfg(any(ra8m1, ra8d1, ra8e1, ra8t1))]
+pub use ra8::Config;
+#[cfg(any(ra8m1, ra8d1, ra8e1, ra8t1))]
+pub(crate) use ra8::init;
+
+// Fallback for unsupported families - use a basic config
+#[cfg(not(any(
+    ra2e1, ra2e2, ra2l1,
+    ra4m1, ra4m2, ra4m3, ra4e1, ra4e2, ra4w1,
+    ra6m1, ra6m2, ra6m3, ra6m4, ra6m5, ra6e1, ra6e2, ra6t1, ra6t2,
+    ra8m1, ra8d1, ra8e1, ra8t1
+)))]
+compile_error!("No RA family detected. Make sure a chip feature is enabled (e.g., r7fa6e2ab).");
 
 /// Frozen clock frequencies
 ///
@@ -196,165 +239,3 @@ pub const MOCO_FREQ: Hertz = Hertz(8_000_000);
 
 /// LOCO frequency (fixed at 32.768 kHz)
 pub const LOCO_FREQ: Hertz = Hertz(32_768);
-
-/// Clock configuration
-///
-/// This is a unified configuration struct that works across all RA families.
-/// Not all fields are used on all families - unused fields are ignored.
-#[non_exhaustive]
-#[derive(Clone, Copy, Default)]
-pub struct Config {
-    /// Clock source selection
-    pub source: ClockSource,
-    
-    /// HOCO frequency (if HOCO is used as source)
-    pub hoco_freq: HocoFreq,
-    
-    /// Main oscillator configuration (if MOSC is used)
-    pub main_osc: Option<MainOscConfig>,
-    
-    /// System clock (ICLK) divider
-    pub iclk_div: ClockDiv,
-    
-    /// Peripheral clock A (PCLKA) divider (RA4/RA6/RA8 only)
-    pub pclka_div: ClockDiv,
-    
-    /// Peripheral clock B (PCLKB) divider
-    pub pclkb_div: ClockDiv,
-    
-    /// Peripheral clock C (PCLKC) divider (RA6/RA8 only)
-    pub pclkc_div: ClockDiv,
-    
-    /// Peripheral clock D (PCLKD) divider
-    pub pclkd_div: ClockDiv,
-    
-    /// Flash clock (FCLK) divider (RA4/RA6/RA8 only)
-    pub fclk_div: ClockDiv,
-    
-    /// External bus clock (BCLK) divider (RA6/RA8 only)
-    pub bclk_div: ClockDiv,
-}
-
-impl Config {
-    /// Create configuration using HOCO at specified frequency
-    pub const fn hoco(freq: HocoFreq) -> Self {
-        Self {
-            source: ClockSource::Hoco,
-            hoco_freq: freq,
-            main_osc: None,
-            iclk_div: ClockDiv::Div1,
-            pclka_div: ClockDiv::Div1,
-            pclkb_div: ClockDiv::Div1,
-            pclkc_div: ClockDiv::Div1,
-            pclkd_div: ClockDiv::Div1,
-            fclk_div: ClockDiv::Div1,
-            bclk_div: ClockDiv::Div1,
-        }
-    }
-    
-    /// Create configuration using MOCO (8 MHz)
-    pub const fn moco() -> Self {
-        Self {
-            source: ClockSource::Moco,
-            hoco_freq: HocoFreq::Mhz48,
-            main_osc: None,
-            iclk_div: ClockDiv::Div1,
-            pclka_div: ClockDiv::Div1,
-            pclkb_div: ClockDiv::Div1,
-            pclkc_div: ClockDiv::Div1,
-            pclkd_div: ClockDiv::Div1,
-            fclk_div: ClockDiv::Div1,
-            bclk_div: ClockDiv::Div1,
-        }
-    }
-    
-    /// Create configuration using external main oscillator
-    pub const fn main_osc(config: MainOscConfig) -> Self {
-        Self {
-            source: ClockSource::MainOsc,
-            hoco_freq: HocoFreq::Mhz48,
-            main_osc: Some(config),
-            iclk_div: ClockDiv::Div1,
-            pclka_div: ClockDiv::Div1,
-            pclkb_div: ClockDiv::Div1,
-            pclkc_div: ClockDiv::Div1,
-            pclkd_div: ClockDiv::Div1,
-            fclk_div: ClockDiv::Div1,
-            bclk_div: ClockDiv::Div1,
-        }
-    }
-    
-    /// Set ICLK divider
-    pub const fn iclk_div(mut self, div: ClockDiv) -> Self {
-        self.iclk_div = div;
-        self
-    }
-    
-    /// Set PCLKB divider
-    pub const fn pclkb_div(mut self, div: ClockDiv) -> Self {
-        self.pclkb_div = div;
-        self
-    }
-    
-    /// Set PCLKD divider
-    pub const fn pclkd_div(mut self, div: ClockDiv) -> Self {
-        self.pclkd_div = div;
-        self
-    }
-}
-
-/// Initialize clocks with the given configuration
-pub(crate) fn init(config: Config) -> Clocks {
-    // Calculate source frequency
-    let source_freq = match config.source {
-        ClockSource::Hoco => Hertz(config.hoco_freq.to_hz()),
-        ClockSource::Moco => MOCO_FREQ,
-        ClockSource::Loco => LOCO_FREQ,
-        ClockSource::MainOsc => {
-            config.main_osc.expect("MainOsc config required when using MainOsc source").freq
-        }
-        ClockSource::SubOsc => Hertz(32_768),
-        ClockSource::Pll => {
-            // TODO: Implement PLL calculation
-            panic!("PLL configuration not yet implemented");
-        }
-    };
-    
-    // Calculate output frequencies
-    let iclk = Hertz(source_freq.0 / config.iclk_div.divisor());
-    let pclkb = Hertz(source_freq.0 / config.pclkb_div.divisor());
-    let pclkd = Hertz(source_freq.0 / config.pclkd_div.divisor());
-    
-    // Configure SCKSCR
-    let cksel: u8 = match config.source {
-        ClockSource::Hoco => 0b000,
-        ClockSource::Moco => 0b001,
-        ClockSource::Loco => 0b010,
-        ClockSource::MainOsc => 0b011,
-        ClockSource::SubOsc => 0b100,
-        ClockSource::Pll => 0b101,
-    };
-    
-    // Write to registers using modify() which gives access to typed fields
-    let sysc = unsafe { peripherals::SYSC::steal() };
-    
-    sysc.sckdivcr().modify(|w| {
-        w.set_pckd((config.pclkd_div as u8).into());
-        w.set_pckb((config.pclkb_div as u8).into());
-        w.set_ick((config.iclk_div as u8).into());
-    });
-    
-    sysc.sckscr().modify(|w| {
-        w.set_cksel(cksel.into());
-    });
-    
-    Clocks {
-        iclk,
-        pclkb,
-        pclkd,
-        fclk: None,
-        pclka: None,
-        pclkc: None,
-        bclk: None,
-    }
-}
