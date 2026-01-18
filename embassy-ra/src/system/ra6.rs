@@ -17,7 +17,8 @@ pub const MOCO_FREQ: Hertz = Hertz(8_000_000);
 /// LOCO frequency (fixed at 32.768 kHz)
 pub const LOCO_FREQ: Hertz = Hertz(32_768);
 
-/// Maximum ICLK frequency for RA6M5
+/// Maximum ICLK frequency for RA6 family (varies by sub-family)
+/// RA6E2: 200 MHz, RA6M5: 200 MHz, others: 120-200 MHz
 pub const MAX_ICLK_FREQ: Hertz = Hertz(200_000_000);
 
 /// Maximum PCLKA frequency
@@ -302,26 +303,26 @@ pub(crate) fn init(config: Config) -> Clocks {
     
     // TODO: Configure flash wait states based on ICLK frequency
     
+    // Unlock register protection for clock configuration
+    sysc.prcr().modify(|w| {
+        w.set_prkey(0xA5);  // Write key
+        w.set_prc0(true);   // Enable writing to clock registers
+    });
+
     // Configure SCKDIVCR (System Clock Division Control Register)
-    // Bits [2:0]   - PCKD
-    // Bits [6:4]   - PCKC
-    // Bits [10:8]  - PCKB
-    // Bits [14:12] - PCKA
-    // Bits [18:16] - BCK
-    // Bits [26:24] - ICK
-    // Bits [30:28] - FCK
-    let sckdivcr = (config.pclkd_div as u32)
-        | ((config.pclkc_div as u32) << 4)
-        | ((config.pclkb_div as u32) << 8)
-        | ((config.pclka_div as u32) << 12)
-        | ((config.bclk_div as u32) << 16)
-        | ((config.iclk_div as u32) << 24)
-        | ((config.fclk_div as u32) << 28);
-    
-    sysc.sckdivcr().write_value(sckdivcr);
+    sysc.sckdivcr().modify(|w| {
+        w.set_pckd((config.pclkd_div as u8).into());
+        w.set_pckc((config.pclkc_div as u8).into());
+        w.set_pckb((config.pclkb_div as u8).into());
+        w.set_pcka((config.pclka_div as u8).into());
+        // Note: BCK (external bus clock) not available on all RA6 variants (e.g., RA6E2)
+        // w.set_bck((config.bclk_div as u8).into());
+        w.set_ick((config.iclk_div as u8).into());
+        w.set_fck((config.fclk_div as u8).into());
+    });
     
     // Configure SCKSCR (System Clock Source Control Register)
-    let cksel = match config.source {
+    let cksel: u8 = match config.source {
         ClockSource::Hoco => 0b000,
         ClockSource::Moco => 0b001,
         ClockSource::Loco => 0b010,
@@ -336,7 +337,15 @@ pub(crate) fn init(config: Config) -> Clocks {
     // 3. Switch clock source
     // 4. Disable unused oscillators (optional, for power saving)
     
-    sysc.sckscr().write_value(cksel);
+    sysc.sckscr().modify(|w| {
+        w.set_cksel(cksel.into());
+    });
+    
+    // Lock register protection
+    sysc.prcr().modify(|w| {
+        w.set_prkey(0xA5);
+        w.set_prc0(false);
+    });
     
     Clocks {
         iclk,

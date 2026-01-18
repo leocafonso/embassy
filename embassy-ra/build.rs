@@ -4,18 +4,20 @@ use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
 
-use ra_metapac::metadata::{self, Event};
+use ra_metapac::metadata::{self, Event, Peripheral};
 
 // ============================================================================
-// PERIPHERAL IRQ CONFIGURATION - Add new peripherals here!
+// PERIPHERAL IRQ CONFIGURATION
 // ============================================================================
 
 /// Defines a peripheral's interrupt configuration
 struct PeripheralIrqConfig {
     /// Cargo feature that enables this peripheral (without CARGO_FEATURE_ prefix)
     feature: &'static str,
-    /// Event names this peripheral uses
-    events: &'static [&'static str],
+    /// Peripheral name to match (e.g., "GPT0", "SCI1", "IIC0")
+    peripheral_name: &'static str,
+    /// Signal names this peripheral needs (e.g., ["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"])
+    signals: &'static [&'static str],
     /// Handler function to call for these events
     handler: &'static str,
 }
@@ -24,49 +26,105 @@ struct PeripheralIrqConfig {
 const GPT_CONFIGS: &[PeripheralIrqConfig] = &[
     PeripheralIrqConfig {
         feature: "TIME_DRIVER_GPT0",
-        events: &["GPT0_COUNTER_OVERFLOW", "GPT0_CAPTURE_COMPARE_A"],
+        peripheral_name: "GPT0",
+        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
         handler: "crate::time_driver::on_interrupt",
     },
     PeripheralIrqConfig {
         feature: "TIME_DRIVER_GPT1",
-        events: &["GPT1_COUNTER_OVERFLOW", "GPT1_CAPTURE_COMPARE_A"],
+        peripheral_name: "GPT1",
+        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
         handler: "crate::time_driver::on_interrupt",
     },
     PeripheralIrqConfig {
         feature: "TIME_DRIVER_GPT2",
-        events: &["GPT2_COUNTER_OVERFLOW", "GPT2_CAPTURE_COMPARE_A"],
+        peripheral_name: "GPT2",
+        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
         handler: "crate::time_driver::on_interrupt",
     },
     PeripheralIrqConfig {
         feature: "TIME_DRIVER_GPT3",
-        events: &["GPT3_COUNTER_OVERFLOW", "GPT3_CAPTURE_COMPARE_A"],
+        peripheral_name: "GPT3",
+        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
         handler: "crate::time_driver::on_interrupt",
     },
 ];
 
 /// Get all peripheral configurations
-fn get_all_peripheral_configs() -> Vec<PeripheralIrqConfig> {
-    let mut configs: Vec<PeripheralIrqConfig> = Vec::new();
+fn get_all_peripheral_configs() -> Vec<&'static PeripheralIrqConfig> {
+    let mut configs: Vec<&'static PeripheralIrqConfig> = Vec::new();
     
     // Add GPT configs
-    configs.extend(GPT_CONFIGS.iter().map(|c| PeripheralIrqConfig {
-        feature: c.feature,
-        events: c.events,
-        handler: c.handler,
-    }));
+    configs.extend(GPT_CONFIGS.iter());
     
     // Add more peripheral configs here as needed:
-    // configs.extend(get_uart_configs());
-    // configs.extend(get_iic_configs());
-    // configs.extend(get_spi_configs());
-    // configs.extend(get_adc_configs());
+    // configs.extend(SCI_CONFIGS.iter());
+    // configs.extend(IIC_CONFIGS.iter());
+    // configs.extend(SPI_CONFIGS.iter());
     
     configs
+}
+
+/// Find the peripheral by name from metadata
+fn find_peripheral(name: &str) -> Option<&'static Peripheral> {
+    metadata::PERIPHERALS.iter().find(|p| p.name == name)
+}
+
+/// Find events for a peripheral config using the peripheral's interrupt list
+fn find_events_for_config(config: &PeripheralIrqConfig) -> Vec<&'static Event> {
+    let peripheral = match find_peripheral(config.peripheral_name) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    
+    // Build event names from peripheral name + signal (e.g., "GPT0" + "COUNTER_OVERFLOW" -> "GPT0_COUNTER_OVERFLOW")
+    let event_names: Vec<String> = peripheral.interrupts
+        .iter()
+        .filter(|signal| config.signals.contains(signal))
+        .map(|signal| format!("{}_{}", peripheral.name, signal))
+        .collect();
+    
+    // Find the corresponding Event entries with full metadata
+    metadata::EVENTS
+        .iter()
+        .filter(|event| event_names.iter().any(|name| name == event.name))
+        .collect()
 }
 
 // ============================================================================
 // BUILD SCRIPT MAIN
 // ============================================================================
+
+/// Extract the RA family identifier from the chip name
+/// e.g., "r7fa6e2ab" -> "ra6e2", "r7fa2e1a9" -> "ra2e1", "r7fa4m1ab" -> "ra4m1"
+fn extract_chip_family(chip_name: &str) -> Option<String> {
+    // Chip name format: r7fa<series><group>xx or r8faxxxxxx
+    // series: 2, 4, 6, 8
+    // group: e1, e2, m1, m2, m3, etc.
+    
+    // Remove hyphens (from r7fa6e2ab-3cfc -> r7fa6e2ab3cfc)
+    let clean_name = chip_name.replace("-", "");
+    
+    // Check if it starts with "r7fa" or "r8fa"
+    if clean_name.starts_with("r7fa") || clean_name.starts_with("r8fa") {
+        // Extract after "r7fa" or "r8fa" (position 4)
+        let suffix = &clean_name[4..];
+        
+        // suffix should be like "6e2ab3cfc" (series=6, group=e2)
+        // or "2e1a98765" (series=2, group=e1)
+        if suffix.len() >= 3 {
+            let series = &suffix[0..1]; // "6", "2", "4", "8"
+            let group = &suffix[1..3];   // "e2", "e1", "m1", etc.
+            
+            // Validate series is a digit
+            if series.chars().all(|c| c.is_ascii_digit()) {
+                return Some(format!("ra{}{}", series, group));
+            }
+        }
+    }
+    
+    None
+}
 
 fn main() {
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
@@ -80,6 +138,25 @@ fn main() {
     if let Some(chip_name) = chip_name {
         println!("cargo:rustc-cfg={}", chip_name);
         println!("cargo:rustc-cfg=ra");
+        
+        // Extract family from chip name (e.g., "r7fa6e2ab" -> "ra6e2", "r7fa2e1a9" -> "ra2e1")
+        // Format: r7fa<series><group><feature>xx or r8faxxxx  
+        // We need to emit the series+group (e.g., "ra6e2", "ra2e1", "ra4m1")
+        if let Some(family) = extract_chip_family(&chip_name) {
+            println!("cargo:rustc-cfg={}", family);
+        }
+        
+        // Tell Cargo to expect our custom cfg values
+        println!("cargo::rustc-check-cfg=cfg(ra)");
+        // Family cfgs
+        for family in &[
+            "ra2e1", "ra2e2", "ra2l1",
+            "ra4m1", "ra4m2", "ra4m3", "ra4e1", "ra4e2", "ra4w1",
+            "ra6m1", "ra6m2", "ra6m3", "ra6m4", "ra6m5", "ra6e1", "ra6e2", "ra6t1", "ra6t2",
+            "ra8m1", "ra8d1", "ra8e1", "ra8t1",
+        ] {
+            println!("cargo::rustc-check-cfg=cfg({})", family);
+        }
 
         generate_memory_x(&out);
         generate_interrupt_bindings(&out);
@@ -155,64 +232,51 @@ fn generate_memory_x(out: &PathBuf) {
 
 /// Get enabled peripheral configs based on Cargo features
 fn get_enabled_configs() -> Vec<&'static PeripheralIrqConfig> {
-    // Leak the configs so they have 'static lifetime
-    let configs: &'static Vec<PeripheralIrqConfig> = Box::leak(Box::new(get_all_peripheral_configs()));
-    
-    configs
-        .iter()
+    get_all_peripheral_configs()
+        .into_iter()
         .filter(|config| env::var(format!("CARGO_FEATURE_{}", config.feature)).is_ok())
         .collect()
 }
 
 /// Collect all required events from enabled peripherals
-fn get_required_events() -> Vec<&'static str> {
+fn get_required_events() -> Vec<&'static Event> {
     get_enabled_configs()
         .iter()
-        .flat_map(|config| config.events.iter().copied())
+        .flat_map(|config| find_events_for_config(config))
         .collect()
 }
 
 /// Allocates IRQ slots to events, respecting group constraints
-fn allocate_irq_slots(required_events: &[&str]) -> BTreeMap<&'static str, u8> {
+fn allocate_irq_slots(required_events: &[&Event]) -> BTreeMap<&'static str, u8> {
     let mut allocations: BTreeMap<&'static str, u8> = BTreeMap::new();
     let mut used_slots: Vec<bool> = vec![false; metadata::INTERRUPT_COUNT];
 
-    // Build event lookup map
-    let event_map: BTreeMap<&str, &Event> = metadata::EVENTS
-        .iter()
-        .map(|e| (e.name, e))
-        .collect();
-
     // First pass: allocate events with restricted slots (grouped events)
-    for event_name in required_events {
-        if let Some(event) = event_map.get(*event_name) {
-            if !event.irq_slots.is_empty() {
-                // Find first available slot from the allowed list
-                for &slot in event.irq_slots {
-                    if !used_slots[slot as usize] {
-                        used_slots[slot as usize] = true;
-                        allocations.insert(event.name, slot);
-                        break;
-                    }
+    for event in required_events {
+        if !event.irq_slots.is_empty() {
+            // Find first available slot from the allowed list
+            for &slot in event.irq_slots {
+                if !used_slots[slot as usize] {
+                    used_slots[slot as usize] = true;
+                    allocations.insert(event.name, slot);
+                    break;
                 }
             }
         }
     }
 
     // Second pass: allocate events with unrestricted slots
-    for event_name in required_events {
-        if allocations.contains_key(*event_name) {
+    for event in required_events {
+        if allocations.contains_key(event.name) {
             continue; // Already allocated
         }
-        if let Some(event) = event_map.get(*event_name) {
-            if event.irq_slots.is_empty() {
-                // Find first available slot
-                for (slot, used) in used_slots.iter_mut().enumerate() {
-                    if !*used {
-                        *used = true;
-                        allocations.insert(event.name, slot as u8);
-                        break;
-                    }
+        if event.irq_slots.is_empty() {
+            // Find first available slot
+            for (slot, used) in used_slots.iter_mut().enumerate() {
+                if !*used {
+                    *used = true;
+                    allocations.insert(event.name, slot as u8);
+                    break;
                 }
             }
         }
@@ -246,24 +310,19 @@ fn generate_interrupt_bindings(out_dir: &PathBuf) {
     // Generate event IDs
     writeln!(code, "/// Event IDs for ICU IELSR programming").unwrap();
     writeln!(code, "pub mod event_ids {{").unwrap();
-    let event_map: BTreeMap<&str, &Event> = metadata::EVENTS
-        .iter()
-        .map(|e| (e.name, e))
-        .collect();
-    for event_name in &required_events {
-        if let Some(event) = event_map.get(*event_name) {
-            let const_name = event_name.to_uppercase();
-            writeln!(code, "    pub const {}: u16 = {};", const_name, event.id).unwrap();
-        }
+    for event in &required_events {
+        let const_name = event.name.to_uppercase();
+        writeln!(code, "    pub const {}: u16 = {};", const_name, event.id).unwrap();
     }
     writeln!(code, "}}").unwrap();
     writeln!(code).unwrap();
 
     // Generate IEL interrupt handlers for each enabled peripheral
     // Group events by handler to generate efficient dispatch
-    let mut handler_to_events: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut handler_to_events: BTreeMap<&str, Vec<&Event>> = BTreeMap::new();
     for config in &enabled_configs {
-        for event in config.events.iter() {
+        let events = find_events_for_config(config);
+        for event in events {
             handler_to_events
                 .entry(config.handler)
                 .or_default()
@@ -273,9 +332,9 @@ fn generate_interrupt_bindings(out_dir: &PathBuf) {
 
     // Generate handlers
     for (handler, events) in &handler_to_events {
-        for event_name in events {
-            if let Some(&slot) = allocations.get(*event_name) {
-                writeln!(code, "/// Interrupt handler for {} (IEL{})", event_name, slot).unwrap();
+        for event in events {
+            if let Some(&slot) = allocations.get(event.name) {
+                writeln!(code, "/// Interrupt handler for {} (IEL{})", event.name, slot).unwrap();
                 writeln!(code, "#[no_mangle]").unwrap();
                 writeln!(code, "#[allow(non_snake_case)]").unwrap();
                 writeln!(code, "pub unsafe extern \"C\" fn IEL{}() {{", slot).unwrap();

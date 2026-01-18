@@ -15,17 +15,14 @@
   // Uncomment the target of your chip.
   //"rust-analyzer.cargo.target": "thumbv6m-none-eabi",
   //"rust-analyzer.cargo.target": "thumbv7m-none-eabi",
-  "rust-analyzer.cargo.target": "thumbv7em-none-eabi",
+  //"rust-analyzer.cargo.target": "thumbv7em-none-eabi",
   //"rust-analyzer.cargo.target": "thumbv7em-none-eabihf",
   //"rust-analyzer.cargo.target": "thumbv8m.main-none-eabihf",
-  "rust-analyzer.cargo.features": [
-    // Comment out these features when working on the examples. Most example crates do not have any cargo features.
-    "r7fa6e2bb3cfm",
-    "time-driver-any",
-    "unstable-pac",
-  ],
+  "rust-analyzer.cargo.features": [],
   "rust-analyzer.linkedProjects": [
-    "embassy-ra/Cargo.toml",
+    // "embassy-ra/Cargo.toml",
+    //"examples/ra2e1/Cargo.toml",
+    "examples/ra6e2/Cargo.toml",
     // To work on the examples, comment the line above and all of the cargo.features lines,
     // then uncomment ONE line below to select the chip you want to work on.
     // This makes rust-analyzer work on the example crate and all its dependencies.
@@ -48,7 +45,7 @@
     // "examples/stm32f2/Cargo.toml",
     // "examples/stm32f3/Cargo.toml",
     // "examples/stm32f334/Cargo.toml",
-    // "examples/stm32f4/Cargo.toml",
+    //  "examples/stm32f4/Cargo.toml",
     // "examples/stm32f7/Cargo.toml",
     // "examples/stm32g0/Cargo.toml",
     // "examples/stm32g4/Cargo.toml",
