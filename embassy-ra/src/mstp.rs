@@ -1,201 +1,152 @@
 use crate::pac;
+use crate::peripherals::MSTP;
+#[cfg(any(
+    ra0e1, ra0e2,
+    ra2a1, ra2a2, ra2e1, ra2e2, ra2e3, ra2l1, ra2l2, ra2t1,
+    ra4m1, ra4w1,
+    ra6m1, ra6m2, ra6m3, ra6t1
+))]
+use crate::peripherals::SYSC;
+
+// ============================================================================
+// MSTP Register Access
+// ============================================================================
+// 
+// MSTP (Module Stop) registers control power to peripherals.
+// Different RA families have different MSTP register layouts:
+//
+// Register availability by family:
+// - RA0:     MSTPCRB, MSTPCRC, MSTPCRD (MSTPCRA in SYSC)
+// - RA2:     MSTPCRB, MSTPCRC, MSTPCRD (MSTPCRA in SYSC)
+// - RA4/6/8: MSTPCRA, MSTPCRB, MSTPCRC, MSTPCRD, MSTPCRE (in MSTP)
+//
+// For families without MSTPCRA in MSTP, it's located in SYSC instead.
+
+// ============================================================================
+// MSTPCRA Access
+// ============================================================================
+
+/// Families with MSTPCRA in MSTP peripheral (TrustZone-capable devices)
+#[cfg(any(
+    ra4c1, ra4e1, ra4e2, ra4l1, ra4m2, ra4m3, ra4t1,
+    ra6e1, ra6e2, ra6m4, ra6m5, ra6t2, ra6t3,
+    ra8d1, ra8e1, ra8e2, ra8m1, ra8p1, ra8t1
+))]
+#[allow(unused_variables)]
+unsafe fn modify_mstpcra(bit: u32, f: impl FnOnce(&mut u32)) {
+    let mstp = MSTP::steal();
+    mstp.mstpcra().modify(|w| {
+        let mut val = w.0 as u32;
+        f(&mut val);
+        w.0 = val as _;
+    });
+    // Dummy read for synchronization
+    let _ = mstp.mstpcra().read();
+}
+
+/// Families with MSTPCRA in SYSC peripheral (non-TrustZone devices)
+#[cfg(any(
+    ra0e1, ra0e2,
+    ra2a1, ra2a2, ra2e1, ra2e2, ra2e3, ra2l1, ra2l2, ra2t1,
+    ra4m1, ra4w1,
+    ra6m1, ra6m2, ra6m3, ra6t1
+))]
+#[allow(unused_variables)]
+unsafe fn modify_mstpcra(bit: u32, f: impl FnOnce(&mut u32)) {
+    let sysc = SYSC::steal();
+    sysc.mstpcra().modify(|w| {
+        let mut val = w.0 as u32;
+        f(&mut val);
+        w.0 = val as _;
+    });
+    // Dummy read for synchronization
+    let _ = sysc.mstpcra().read();
+}
+
+// ============================================================================
+// MSTPCRB Access (all families have this in MSTP)
+// ============================================================================
 
 #[allow(unused_variables)]
-trait MstpRA {
-    unsafe fn modify_a(&self, bit: u32, f: impl FnOnce(&mut u32)) {}
+unsafe fn modify_mstpcrb(bit: u32, f: impl FnOnce(&mut u32)) {
+    let mstp = MSTP::steal();
+    mstp.mstpcrb().modify(|w| {
+        let mut val = w.0 as u32;
+        f(&mut val);
+        w.0 = val as _;
+    });
+    // Dummy read for synchronization
+    let _ = mstp.mstpcrb().read();
 }
+
+// ============================================================================
+// MSTPCRC Access (all families have this in MSTP)
+// ============================================================================
+
 #[allow(unused_variables)]
-trait MstpRB {
-    unsafe fn modify_b(&self, bit: u32, f: impl FnOnce(&mut u32)) {}
+unsafe fn modify_mstpcrc(bit: u32, f: impl FnOnce(&mut u32)) {
+    let mstp = MSTP::steal();
+    mstp.mstpcrc().modify(|w| {
+        let mut val = w.0 as u32;
+        f(&mut val);
+        w.0 = val as _;
+    });
+    // Dummy read for synchronization
+    let _ = mstp.mstpcrc().read();
 }
+
+// ============================================================================
+// MSTPCRD Access (all families have this in MSTP)
+// ============================================================================
+
 #[allow(unused_variables)]
-trait MstpRC {
-    unsafe fn modify_c(&self, bit: u32, f: impl FnOnce(&mut u32)) {}
+unsafe fn modify_mstpcrd(bit: u32, f: impl FnOnce(&mut u32)) {
+    let mstp = MSTP::steal();
+    mstp.mstpcrd().modify(|w| {
+        let mut val = w.0 as u32;
+        f(&mut val);
+        w.0 = val as _;
+    });
+    // Dummy read for synchronization
+    let _ = mstp.mstpcrd().read();
 }
+
+// ============================================================================
+// MSTPCRE Access (only RA4E/RA6/RA8 families with TrustZone)
+// ============================================================================
+
+/// Families with MSTPCRE register
+#[cfg(any(
+    ra4c1, ra4e1, ra4e2, ra4l1, ra4m2, ra4m3, ra4t1,
+    ra6e1, ra6e2, ra6m1, ra6m2, ra6m3, ra6m4, ra6m5, ra6t1, ra6t2, ra6t3,
+    ra8d1, ra8e1, ra8e2, ra8m1, ra8p1, ra8t1
+))]
 #[allow(unused_variables)]
-trait MstpRD {
-    unsafe fn modify_d(&self, bit: u32, f: impl FnOnce(&mut u32)) {}
+unsafe fn modify_mstpcre(bit: u32, f: impl FnOnce(&mut u32)) {
+    let mstp = MSTP::steal();
+    mstp.mstpcre().modify(|w| {
+        let mut val = w.0 as u32;
+        f(&mut val);
+        w.0 = val as _;
+    });
+    // Dummy read for synchronization
+    let _ = mstp.mstpcre().read();
 }
+
+/// Families without MSTPCRE register (no-op)
+#[cfg(not(any(
+    ra4c1, ra4e1, ra4e2, ra4l1, ra4m2, ra4m3, ra4t1,
+    ra6e1, ra6e2, ra6m1, ra6m2, ra6m3, ra6m4, ra6m5, ra6t1, ra6t2, ra6t3,
+    ra8d1, ra8e1, ra8e2, ra8m1, ra8p1, ra8t1
+)))]
 #[allow(unused_variables)]
-trait MstpRE {
-    unsafe fn modify_e(&self, bit: u32, f: impl FnOnce(&mut u32)) {}
+unsafe fn modify_mstpcre(bit: u32, f: impl FnOnce(&mut u32)) {
+    // MSTPCRE not available on this family
 }
 
-// MSTP versions
-impl MstpRA for pac::_peripherals::mstp_v1::Mstp {}
-impl MstpRA for pac::_peripherals::mstp_v2::Mstp {
-    unsafe fn modify_a(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcra().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRA for pac::_peripherals::mstp_v3::Mstp {}
-
-impl MstpRB for pac::_peripherals::mstp_v1::Mstp {
-    unsafe fn modify_b(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrb().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRB for pac::_peripherals::mstp_v2::Mstp {
-    unsafe fn modify_b(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrb().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRB for pac::_peripherals::mstp_v3::Mstp {
-    unsafe fn modify_b(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrb().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-
-impl MstpRC for pac::_peripherals::mstp_v1::Mstp {
-    unsafe fn modify_c(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrc().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRC for pac::_peripherals::mstp_v2::Mstp {
-    unsafe fn modify_c(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrc().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRC for pac::_peripherals::mstp_v3::Mstp {
-    unsafe fn modify_c(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrc().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-
-impl MstpRD for pac::_peripherals::mstp_v1::Mstp {
-    unsafe fn modify_d(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrd().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRD for pac::_peripherals::mstp_v2::Mstp {
-    unsafe fn modify_d(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrd().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRD for pac::_peripherals::mstp_v3::Mstp {
-    unsafe fn modify_d(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcrd().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-
-impl MstpRE for pac::_peripherals::mstp_v1::Mstp {}
-impl MstpRE for pac::_peripherals::mstp_v2::Mstp {
-    unsafe fn modify_e(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-        self.mstpcre().modify(|w| {
-            let mut val = w.0 as u32;
-            f(&mut val);
-            w.0 = val as _;
-        })
-    }
-}
-impl MstpRE for pac::_peripherals::mstp_v3::Mstp {}
-
-// SYSC versions with MSTPCRA
-macro_rules! impl_sysc_with_mstpcra {
-    ($($version:ident),*) => {
-        $(
-            impl MstpRA for pac::_peripherals::$version::Sysc {
-                unsafe fn modify_a(&self, _bit: u32, f: impl FnOnce(&mut u32)) {
-                    self.mstpcra().modify(|w| {
-                        let mut val = w.0 as u32;
-                        f(&mut val);
-                        w.0 = val as _;
-                    })
-                }
-            }
-        )*
-    };
-}
-
-// SYSC versions without MSTPCRA (empty impl)
-macro_rules! impl_sysc_without_mstpcra {
-    ($($version:ident),*) => {
-        $(
-            impl MstpRA for pac::_peripherals::$version::Sysc {}
-        )*
-    };
-}
-
-// SYSC versions that have MSTPCRA
-impl_sysc_with_mstpcra!(
-    sysc_ra0,
-    sysc_ra2a1,
-    sysc_ra2a2,
-    sysc_ra2e1,
-    sysc_ra2e2,
-    sysc_ra2l1,
-    sysc_ra2t1,
-    sysc_ra4m1,
-    sysc_ra4w1,
-    sysc_ra6m1,
-    sysc_ra6m2,
-    sysc_ra6t1
-);
-
-// SYSC versions that don't have MSTPCRA
-impl_sysc_without_mstpcra!(
-    sysc_ra4c1,
-    sysc_ra4e1,
-    sysc_ra4e2,
-    sysc_ra4l1,
-    sysc_ra4m2,
-    sysc_ra4m3,
-    sysc_ra4t1,
-    sysc_ra6e1,
-    sysc_ra6m4,
-    sysc_ra6m5,
-    sysc_ra6t2,
-    sysc_ra6t3,
-    sysc_ra8d1,
-    sysc_ra8e1,
-    sysc_ra8e2,
-    sysc_ra8m1,
-    sysc_ra8t1,
-    sysc_rka8d2,
-    sysc_rka8m2,
-    sysc_rka8p1,
-    sysc_rka8t2
-);
+// ============================================================================
+// Peripheral Trait for MSTP Control
+// ============================================================================
 
 pub trait SealedPeripheral {
     fn metadata() -> &'static pac::metadata::Peripheral;
@@ -204,9 +155,9 @@ pub trait SealedPeripheral {
 macro_rules! impl_peripheral {
     ($($name:ident = $index:expr,)*) => {
         $(
-            impl SealedPeripheral for pac::peripherals::$name {
+            impl SealedPeripheral for crate::peripherals::$name {
                 fn metadata() -> &'static pac::metadata::Peripheral {
-                    &pac::metadata::PERIPHERALS[$index]
+                    &pac::metadata::METADATA.peripherals[$index]
                 }
             }
         )*
@@ -218,167 +169,45 @@ pac::foreach_peripheral!(impl_peripheral);
 pub trait Peripheral: SealedPeripheral {}
 impl<T: SealedPeripheral> Peripheral for T {}
 
+// ============================================================================
+// Clock Enable/Disable Functions
+// ============================================================================
+
+/// Enable the clock for a peripheral by clearing its MSTP bit.
+/// 
+/// # Safety
+/// This function modifies hardware registers and should be called with
+/// appropriate synchronization if multiple contexts access the same MSTP register.
 pub unsafe fn enable_clock<T: Peripheral>(_peri: T) {
     let metadata = T::metadata();
     if let Some(mstp) = metadata.mstp {
         let bit = mstp.bit;
         match mstp.register {
-            "MSTPCRA" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_a(bit, |r| *r &= !(1 << bit));
-                    };
-                    (SYSC) => {
-                        pac::peripherals::SYSC::steal().modify_a(bit, |r| *r &= !(1 << bit));
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRB" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_b(bit, |r| *r &= !(1 << bit));
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRC" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_c(bit, |r| *r &= !(1 << bit));
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRD" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_d(bit, |r| *r &= !(1 << bit));
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRE" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_e(bit, |r| *r &= !(1 << bit));
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
+            "MSTPCRA" => modify_mstpcra(bit, |r| *r &= !(1 << bit)),
+            "MSTPCRB" => modify_mstpcrb(bit, |r| *r &= !(1 << bit)),
+            "MSTPCRC" => modify_mstpcrc(bit, |r| *r &= !(1 << bit)),
+            "MSTPCRD" => modify_mstpcrd(bit, |r| *r &= !(1 << bit)),
+            "MSTPCRE" => modify_mstpcre(bit, |r| *r &= !(1 << bit)),
             _ => {}
         }
     }
 }
 
+/// Disable the clock for a peripheral by setting its MSTP bit.
+/// 
+/// # Safety
+/// This function modifies hardware registers and should be called with
+/// appropriate synchronization if multiple contexts access the same MSTP register.
 pub unsafe fn disable_clock<T: Peripheral>(_peri: T) {
     let metadata = T::metadata();
     if let Some(mstp) = metadata.mstp {
         let bit = mstp.bit;
         match mstp.register {
-            "MSTPCRA" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_a(bit, |r| *r |= 1 << bit);
-                    };
-                    (SYSC) => {
-                        pac::peripherals::SYSC::steal().modify_a(bit, |r| *r |= 1 << bit);
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRB" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_b(bit, |r| *r |= 1 << bit);
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRC" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_c(bit, |r| *r |= 1 << bit);
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRD" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_d(bit, |r| *r |= 1 << bit);
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
-            "MSTPCRE" => {
-                macro_rules! call {
-                    (MSTP) => {
-                        pac::peripherals::MSTP::steal().modify_e(bit, |r| *r |= 1 << bit);
-                    };
-                    ($other:ident) => {};
-                }
-                macro_rules! runner {
-                    ($($name:ident = $index:expr,)*) => {
-                        $( call!($name); )*
-                    };
-                }
-                pac::foreach_peripheral!(runner);
-            }
+            "MSTPCRA" => modify_mstpcra(bit, |r| *r |= 1 << bit),
+            "MSTPCRB" => modify_mstpcrb(bit, |r| *r |= 1 << bit),
+            "MSTPCRC" => modify_mstpcrc(bit, |r| *r |= 1 << bit),
+            "MSTPCRD" => modify_mstpcrd(bit, |r| *r |= 1 << bit),
+            "MSTPCRE" => modify_mstpcre(bit, |r| *r |= 1 << bit),
             _ => {}
         }
     }

@@ -8,7 +8,7 @@
 //!
 //! Reference: RA4M1 Hardware Manual, Section 8 (Clocks)
 
-use crate::pac::peripherals::SYSTEM;
+use crate::peripherals::SYSTEM;
 use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
 
 /// MOCO frequency (fixed at 8 MHz)

@@ -75,27 +75,27 @@ impl<'d> Flex<'d> {
         let (port, pin) = (self.pin.port(), self.pin.pin());
         critical_section::with(|_| {
             self.set_write_protect(false);
-            pac::peripherals::PFS::REGS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| w.set_podr(level.into()));
+            pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| w.set_podr(level.into()));
             self.set_write_protect(true);
         });
     }
 
     fn set_write_protect(&self, protect: bool) {
         if !protect {
-            pac::peripherals::PFS::REGS.pwpr().write(|w| {
+            pac::PFS.pwpr().write(|w| {
                 w.set_b0wi(false);
                 w.set_pfswe(false);
             });
-            pac::peripherals::PFS::REGS.pwpr().write(|w| {
+            pac::PFS.pwpr().write(|w| {
                 w.set_b0wi(false);
                 w.set_pfswe(true);
             });
         } else {
-            pac::peripherals::PFS::REGS.pwpr().write(|w| {
+            pac::PFS.pwpr().write(|w| {
                 w.set_b0wi(false);
                 w.set_pfswe(false);
             });
-            pac::peripherals::PFS::REGS.pwpr().write(|w| {
+            pac::PFS.pwpr().write(|w| {
                 w.set_b0wi(true);
                 w.set_pfswe(false);
             });
@@ -107,7 +107,7 @@ impl<'d> Flex<'d> {
         let (port, pin) = (self.pin.port(), self.pin.pin());
         critical_section::with(|_| {
             self.set_write_protect(false);
-            pac::peripherals::PFS::REGS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| {
+            pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| {
                 w.set_pdr(true); // Output
                 w.set_pmr(false); // GPIO
             });
@@ -120,7 +120,7 @@ impl<'d> Flex<'d> {
         let (port, pin) = (self.pin.port(), self.pin.pin());
         critical_section::with(|_| {
             self.set_write_protect(false);
-            pac::peripherals::PFS::REGS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| {
+            pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| {
                 w.set_pdr(false); // Input
                 w.set_pmr(false); // GPIO
                 w.set_pcr(match pull {
@@ -145,7 +145,7 @@ impl<'d> Flex<'d> {
     #[inline]
     pub fn get_level(&self) -> Level {
         let (port, pin) = (self.pin.port(), self.pin.pin());
-        if pac::peripherals::PFS::REGS.pmn_pfs(port as usize * 16 + pin as usize).read().pidr() {
+        if pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).read().pidr() {
             Level::High
         } else {
             Level::Low
@@ -287,9 +287,9 @@ macro_rules! impl_pin {
     ($($(#[$cfg:meta])* ($name:ident, $port:expr, $pin:expr)),* $(,)?) => {
         $(
             $(#[$cfg])*
-            impl Pin for pac::peripherals::$name {}
+            impl Pin for crate::peripherals::$name {}
             $(#[$cfg])*
-            impl sealed::Pin for pac::peripherals::$name {
+            impl sealed::Pin for crate::peripherals::$name {
                 #[inline]
                 fn pin_port(&self) -> u16 {
                     ($port as u16) * 16 + ($pin as u16)
@@ -297,8 +297,8 @@ macro_rules! impl_pin {
             }
 
             $(#[$cfg])*
-            impl From<pac::peripherals::$name> for AnyPin {
-                fn from(_: pac::peripherals::$name) -> Self {
+            impl From<crate::peripherals::$name> for AnyPin {
+                fn from(_: crate::peripherals::$name) -> Self {
                     unsafe { Self::new($port, $pin) }
                 }
             }

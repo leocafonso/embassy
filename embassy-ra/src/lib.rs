@@ -13,7 +13,7 @@ pub mod system;
 mod time_driver;
 
 pub mod peripherals {
-    pub use ra_metapac::peripherals::*;
+    pub use ra_metapac::pac::peripherals::*;
 }
 
 pub mod _macros {

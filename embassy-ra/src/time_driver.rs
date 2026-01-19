@@ -4,7 +4,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use critical_section::{CriticalSection, Mutex};
 use embassy_time_driver::Driver;
 use embassy_time_queue_utils::Queue;
+use crate::pac;
 use crate::peripherals;
+use ra_metapac::timer::{GTP, regs};
 
 #[cfg(feature = "defmt")]
 use defmt::*;
@@ -36,7 +38,7 @@ embassy_time_driver::time_driver_impl!(static DRIVER: TimerDriver = TimerDriver 
 
 impl Driver for TimerDriver {
     fn now(&self) -> u64 {
-        let gpt = unsafe { peripherals::GPT0::steal() };
+        let gpt = pac::GPT0;
         let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
         loop {
             let hi = self.overflow_count.load(Ordering::Acquire);
@@ -66,12 +68,13 @@ impl Driver for TimerDriver {
 
 impl TimerDriver {
     fn init(&'static self, _cs: CriticalSection) {
-        let gpt = unsafe { peripherals::GPT0::steal() };
-        let icu = unsafe { peripherals::ICU::steal() };
+        let gpt = pac::GPT0;
+        let icu = pac::ICU;
         let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
         debug!("Timer driver init ({}-bit, 8MHz)", bit_width);
         // Enable GPT0 clock
-        unsafe { crate::mstp::enable_clock(peripherals::GPT0::steal()) };
+        let gpt0 = unsafe { peripherals::GPT0::steal() };
+        unsafe { crate::mstp::enable_clock(gpt0) };
 
         // Stop timer
         gpt.gtcr().modify(|w| w.set_cst(false));
@@ -113,7 +116,7 @@ impl TimerDriver {
     }
 
     fn set_alarm(&self, at: u64) {
-        let gpt = unsafe { peripherals::GPT0::steal() };
+        let gpt = pac::GPT0;
         let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
         
         let now = self.now();
@@ -136,13 +139,13 @@ impl TimerDriver {
 #[allow(non_snake_case)]
 pub(crate) unsafe fn on_interrupt() {
     let irq = (cortex_m::peripheral::Peripherals::steal().SCB.icsr.read() & 0x1FF) as usize - 16;
-    let icu = peripherals::ICU::steal();
+    let icu = pac::ICU;
     let mut ielsr = icu.ielsr(irq).read();
     ielsr &= !(1 << 16); // Clear IR bit
     icu.ielsr(irq).write_value(ielsr);
     let _ = icu.ielsr(irq).read(); // Read back to ensure it's cleared
 
-    let gpt = peripherals::GPT0::steal();
+    let gpt = pac::GPT0;
     let st = gpt.gtst().read();
     
     if st.tcfpo() {
