@@ -8,7 +8,7 @@
 //!
 //! Reference: RA6M5 Hardware Manual, Section 8 (Clocks)
 
-use crate::pac::peripherals::SYSC;
+use crate::peripherals::SYSC;
 use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
 
 /// MOCO frequency (fixed at 8 MHz)

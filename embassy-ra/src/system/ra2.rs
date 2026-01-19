@@ -8,7 +8,7 @@
 //!
 //! Reference: RA2E1 Hardware Manual, Section 8 (Clocks)
 
-use crate::pac::peripherals::SYSC;
+use crate::peripherals::SYSC;
 use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
 
 /// MOCO frequency (fixed at 8 MHz)
@@ -155,7 +155,7 @@ pub(crate) fn init(config: Config) -> Clocks {
         | ((config.pclkb_div as u32) << 8)
         | ((config.iclk_div as u32) << 24);
     
-    sysc.sckdivcr().write_value(sckdivcr);
+    // sysc.sckdivcr().write_value(sckdivcr);
     
     // Configure SCKSCR (System Clock Source Control Register)
     let cksel = match config.source {
@@ -168,7 +168,7 @@ pub(crate) fn init(config: Config) -> Clocks {
     };
     
     // TODO: Add proper clock switching sequence with stabilization wait
-    sysc.sckscr().write_value(cksel);
+    // sysc.sckscr().write_value(cksel);
     
     Clocks {
         iclk,
