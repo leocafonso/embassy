@@ -1,5 +1,11 @@
+//! General-purpose Input/Output (GPIO)
+//!
+//! This driver uses the PORT registers directly for GPIO control.
+//! For pin function configuration (alternate functions, etc.), PFS registers are used.
+
 use core::convert::Infallible;
 use crate::{pac, Peripheral as PeripheralType, PeripheralRef as Peri};
+use pac::port::{Port, regs};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -58,6 +64,44 @@ impl AnyPin {
 
 impl PeripheralType for AnyPin {}
 
+/// Get the PORT block for a given port number.
+/// Uses Port base type which works for both Port and PortExtended since they
+/// share the same register layout for basic GPIO operations.
+#[inline]
+fn port_block(port: u8) -> Port {
+    // PORT blocks are spaced 0x20 apart from PORT0
+    let base = pac::PORT0.as_ptr() as *mut u8;
+    let port_ptr = unsafe { base.add(port as usize * 0x20) };
+    unsafe { Port::from_ptr(port_ptr as *mut ()) }
+}
+
+/// Unlock PFS registers for writing
+fn pfs_unlock() {
+    pac::PFS.pwpr().write(|w| {
+        w.set_b0wi(false);
+        w.set_pfswe(false);
+    });
+    pac::PFS.pwpr().write(|w| {
+        w.set_b0wi(false);
+        w.set_pfswe(true);
+    });
+}
+
+/// Lock PFS registers to prevent accidental writes
+fn pfs_lock() {
+    pac::PFS.pwpr().write(|w| {
+        w.set_b0wi(false);
+        w.set_pfswe(false);
+    });
+    pac::PFS.pwpr().write(|w| {
+        w.set_b0wi(true);
+        w.set_pfswe(false);
+    });
+}
+
+/// GPIO flexible pin.
+///
+/// This pin can be configured as input or output.
 pub struct Flex<'d> {
     pin: Peri<'d, AnyPin>,
 }
@@ -70,86 +114,93 @@ impl<'d> Flex<'d> {
         }
     }
 
+    /// Set the output level using POSR (set high) or PORR (set low).
+    /// These are atomic write-only registers.
     #[inline]
     pub fn set_level(&mut self, level: Level) {
-        let (port, pin) = (self.pin.port(), self.pin.pin());
-        critical_section::with(|_| {
-            self.set_write_protect(false);
-            pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| w.set_podr(level.into()));
-            self.set_write_protect(true);
-        });
-    }
-
-    fn set_write_protect(&self, protect: bool) {
-        if !protect {
-            pac::PFS.pwpr().write(|w| {
-                w.set_b0wi(false);
-                w.set_pfswe(false);
-            });
-            pac::PFS.pwpr().write(|w| {
-                w.set_b0wi(false);
-                w.set_pfswe(true);
-            });
-        } else {
-            pac::PFS.pwpr().write(|w| {
-                w.set_b0wi(false);
-                w.set_pfswe(false);
-            });
-            pac::PFS.pwpr().write(|w| {
-                w.set_b0wi(true);
-                w.set_pfswe(false);
-            });
+        let port = port_block(self.pin.port());
+        let pin_mask = 1u16 << self.pin.pin();
+        
+        match level {
+            Level::High => {
+                // POSR: writing 1 sets the pin high
+                port.posr().write_value(regs::Posr(pin_mask));
+            }
+            Level::Low => {
+                // PORR: writing 1 sets the pin low
+                port.porr().write_value(regs::Porr(pin_mask));
+            }
         }
     }
 
+    /// Configure as output.
     #[inline]
     pub fn set_as_output(&mut self) {
-        let (port, pin) = (self.pin.port(), self.pin.pin());
+        let (port_num, pin) = (self.pin.port(), self.pin.pin());
+        
         critical_section::with(|_| {
-            self.set_write_protect(false);
-            pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| {
-                w.set_pdr(true); // Output
-                w.set_pmr(false); // GPIO
+            // Configure direction via PFS (requires write protection unlock)
+            pfs_unlock();
+            pac::PFS.pmn_pfs(port_num as usize * 16 + pin as usize).modify(|w| {
+                w.set_pdr(true);  // Output
+                w.set_pmr(false); // GPIO mode (not peripheral)
             });
-            self.set_write_protect(true);
+            pfs_lock();
         });
     }
 
+    /// Configure as input.
     #[inline]
     pub fn set_as_input(&mut self, pull: Pull) {
-        let (port, pin) = (self.pin.port(), self.pin.pin());
+        let (port_num, pin) = (self.pin.port(), self.pin.pin());
+        
         critical_section::with(|_| {
-            self.set_write_protect(false);
-            pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).modify(|w| {
+            // Configure direction via PFS (requires write protection unlock)
+            pfs_unlock();
+            pac::PFS.pmn_pfs(port_num as usize * 16 + pin as usize).modify(|w| {
                 w.set_pdr(false); // Input
-                w.set_pmr(false); // GPIO
-                w.set_pcr(match pull {
-                    Pull::Up => true,
-                    _ => false,
-                });
+                w.set_pmr(false); // GPIO mode (not peripheral)
+                w.set_pcr(matches!(pull, Pull::Up));
             });
-            self.set_write_protect(true);
+            pfs_lock();
         });
     }
 
+    /// Set pin high.
     #[inline]
     pub fn set_high(&mut self) {
         self.set_level(Level::High)
     }
 
+    /// Set pin low.
     #[inline]
     pub fn set_low(&mut self) {
         self.set_level(Level::Low)
     }
 
+    /// Get the current input level from PIDR.
     #[inline]
     pub fn get_level(&self) -> Level {
-        let (port, pin) = (self.pin.port(), self.pin.pin());
-        if pac::PFS.pmn_pfs(port as usize * 16 + pin as usize).read().pidr() {
+        let port = port_block(self.pin.port());
+        let pin_mask = 1u16 << self.pin.pin();
+        
+        if (port.pidr().read().0 & pin_mask) != 0 {
             Level::High
         } else {
             Level::Low
         }
+    }
+
+    /// Check if input is high.
+    #[inline]
+    pub fn is_high(&self) -> bool {
+        self.get_level() == Level::High
+    }
+
+    /// Check if input is low.
+    #[inline]
+    pub fn is_low(&self) -> bool {
+        self.get_level() == Level::Low
     }
 }
 
@@ -179,6 +230,7 @@ impl<'d> embedded_hal::digital::InputPin for Flex<'d> {
     }
 }
 
+/// GPIO input driver.
 pub struct Input<'d> {
     pub(crate) flex: Flex<'d>,
 }
@@ -193,12 +245,12 @@ impl<'d> Input<'d> {
 
     #[inline]
     pub fn is_high(&self) -> bool {
-        self.flex.get_level() == Level::High
+        self.flex.is_high()
     }
 
     #[inline]
     pub fn is_low(&self) -> bool {
-        self.flex.get_level() == Level::Low
+        self.flex.is_low()
     }
 
     #[inline]
@@ -221,6 +273,7 @@ impl<'d> embedded_hal::digital::InputPin for Input<'d> {
     }
 }
 
+/// GPIO output driver.
 pub struct Output<'d> {
     pub(crate) flex: Flex<'d>,
 }
@@ -248,7 +301,58 @@ impl<'d> Output<'d> {
     pub fn set_level(&mut self, level: Level) {
         self.flex.set_level(level)
     }
+
+    #[inline]
+    pub fn is_set_high(&self) -> bool {
+        let port = port_block(self.flex.pin.port());
+        let pin_mask = 1u16 << self.flex.pin.pin();
+        (port.podr().read().0 & pin_mask) != 0
+    }
+
+    #[inline]
+    pub fn is_set_low(&self) -> bool {
+        !self.is_set_high()
+    }
+
+    #[inline]
+    pub fn toggle(&mut self) {
+        if self.is_set_high() {
+            self.set_low();
+        } else {
+            self.set_high();
+        }
+    }
 }
+
+impl<'d> embedded_hal::digital::ErrorType for Output<'d> {
+    type Error = Infallible;
+}
+
+impl<'d> embedded_hal::digital::OutputPin for Output<'d> {
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        self.set_low();
+        Ok(())
+    }
+
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        self.set_high();
+        Ok(())
+    }
+}
+
+impl<'d> embedded_hal::digital::StatefulOutputPin for Output<'d> {
+    fn is_set_high(&mut self) -> Result<bool, Self::Error> {
+        Ok((*self).is_set_high())
+    }
+
+    fn is_set_low(&mut self) -> Result<bool, Self::Error> {
+        Ok((*self).is_set_low())
+    }
+}
+
+// ============================================================================
+// Pin trait
+// ============================================================================
 
 pub(crate) mod sealed {
     pub trait Pin {
@@ -283,27 +387,5 @@ impl sealed::Pin for AnyPin {
     }
 }
 
-macro_rules! impl_pin {
-    ($($(#[$cfg:meta])* ($name:ident, $port:expr, $pin:expr)),* $(,)?) => {
-        $(
-            $(#[$cfg])*
-            impl Pin for crate::peripherals::$name {}
-            $(#[$cfg])*
-            impl sealed::Pin for crate::peripherals::$name {
-                #[inline]
-                fn pin_port(&self) -> u16 {
-                    ($port as u16) * 16 + ($pin as u16)
-                }
-            }
-
-            $(#[$cfg])*
-            impl From<crate::peripherals::$name> for AnyPin {
-                fn from(_: crate::peripherals::$name) -> Self {
-                    unsafe { Self::new($port, $pin) }
-                }
-            }
-        )*
-    };
-}
-
-pac::foreach_pin!(impl_pin);
+// Note: Pin trait implementations for individual pins (P100, P101, etc.)
+// are generated in peripherals.rs by build.rs

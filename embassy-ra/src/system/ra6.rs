@@ -8,8 +8,13 @@
 //!
 //! Reference: RA6M5 Hardware Manual, Section 8 (Clocks)
 
-use crate::peripherals::SYSC;
+use crate::pac;
 use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
+
+// Use direct PAC access
+fn sysc() -> pac::sysc::Sysc {
+    pac::SYSC
+}
 
 /// MOCO frequency (fixed at 8 MHz)
 pub const MOCO_FREQ: Hertz = Hertz(8_000_000);
@@ -256,7 +261,7 @@ impl Config {
 /// # Safety
 /// This function should only be called once during system initialization.
 pub(crate) fn init(config: Config) -> Clocks {
-    let sysc = unsafe { SYSC::steal() };
+    let sysc = sysc();
     
     // Calculate source frequency
     let source_freq = match config.source {
