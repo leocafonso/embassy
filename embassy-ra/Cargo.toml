@@ -47,6 +47,7 @@ embassy-hal-internal = { path = "../embassy-hal-internal" }
 default = ["rt"]
 rt = ["ra-metapac/rt"]
 _time-driver = []
+gpio = []
 defmt = ["dep:defmt", "embassy-sync/defmt", "embassy-time/defmt", "ra-metapac/defmt"]
 log = ["dep:log"]
 

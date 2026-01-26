@@ -5,6 +5,7 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use embassy_ra as hal;
+use hal::gpio::{Output, Level};
 use {defmt_rtt as _, panic_probe as _};
 
 #[link_section = ".ofs0"]
@@ -32,7 +33,8 @@ async fn main(_spawner: Spawner) {
     let p = hal::init(Default::default());
     info!("Hello World!");
 
-    let mut led = hal::gpio::Output::new(p.p400, hal::gpio::Level::Low);
+    // Create LED output
+    let mut led = Output::new(p.P400, Level::Low);
 
     loop {
         info!("high");

@@ -1,12 +1,19 @@
 use crate::pac;
-use crate::peripherals::MSTP;
+
+// Use direct PAC constants instead of steal pattern
+fn mstp() -> pac::mstp::Mstp {
+    pac::MSTP
+}
+
 #[cfg(any(
     ra0e1, ra0e2,
     ra2a1, ra2a2, ra2e1, ra2e2, ra2e3, ra2l1, ra2l2, ra2t1,
     ra4m1, ra4w1,
     ra6m1, ra6m2, ra6m3, ra6t1
 ))]
-use crate::peripherals::SYSC;
+fn sysc() -> pac::sysc::Sysc {
+    pac::SYSC
+}
 
 // ============================================================================
 // MSTP Register Access
@@ -34,7 +41,7 @@ use crate::peripherals::SYSC;
 ))]
 #[allow(unused_variables)]
 unsafe fn modify_mstpcra(bit: u32, f: impl FnOnce(&mut u32)) {
-    let mstp = MSTP::steal();
+    let mstp = mstp();
     mstp.mstpcra().modify(|w| {
         let mut val = w.0 as u32;
         f(&mut val);
@@ -53,7 +60,7 @@ unsafe fn modify_mstpcra(bit: u32, f: impl FnOnce(&mut u32)) {
 ))]
 #[allow(unused_variables)]
 unsafe fn modify_mstpcra(bit: u32, f: impl FnOnce(&mut u32)) {
-    let sysc = SYSC::steal();
+    let sysc = sysc();
     sysc.mstpcra().modify(|w| {
         let mut val = w.0 as u32;
         f(&mut val);
@@ -69,7 +76,7 @@ unsafe fn modify_mstpcra(bit: u32, f: impl FnOnce(&mut u32)) {
 
 #[allow(unused_variables)]
 unsafe fn modify_mstpcrb(bit: u32, f: impl FnOnce(&mut u32)) {
-    let mstp = MSTP::steal();
+    let mstp = mstp();
     mstp.mstpcrb().modify(|w| {
         let mut val = w.0 as u32;
         f(&mut val);
@@ -85,7 +92,7 @@ unsafe fn modify_mstpcrb(bit: u32, f: impl FnOnce(&mut u32)) {
 
 #[allow(unused_variables)]
 unsafe fn modify_mstpcrc(bit: u32, f: impl FnOnce(&mut u32)) {
-    let mstp = MSTP::steal();
+    let mstp = mstp();
     mstp.mstpcrc().modify(|w| {
         let mut val = w.0 as u32;
         f(&mut val);
@@ -101,7 +108,7 @@ unsafe fn modify_mstpcrc(bit: u32, f: impl FnOnce(&mut u32)) {
 
 #[allow(unused_variables)]
 unsafe fn modify_mstpcrd(bit: u32, f: impl FnOnce(&mut u32)) {
-    let mstp = MSTP::steal();
+    let mstp = mstp();
     mstp.mstpcrd().modify(|w| {
         let mut val = w.0 as u32;
         f(&mut val);
@@ -123,7 +130,7 @@ unsafe fn modify_mstpcrd(bit: u32, f: impl FnOnce(&mut u32)) {
 ))]
 #[allow(unused_variables)]
 unsafe fn modify_mstpcre(bit: u32, f: impl FnOnce(&mut u32)) {
-    let mstp = MSTP::steal();
+    let mstp = mstp();
     mstp.mstpcre().modify(|w| {
         let mut val = w.0 as u32;
         f(&mut val);

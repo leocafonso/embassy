@@ -4,17 +4,20 @@ pub use ra_metapac as pac;
 
 pub use embassy_hal_internal::{impl_peripheral, Peri as PeripheralRef, PeripheralType as Peripheral};
 
+#[cfg(feature = "gpio")]
 pub mod gpio;
 pub mod interrupt;
 pub mod mstp;
 pub mod system;
 
+// Include auto-generated peripherals definitions
+// This expands to: pub mod peripherals { ... with GPT0, Peripherals, etc. }
+include!(concat!(env!("OUT_DIR"), "/peripherals.rs"));
+// Re-export for convenient access
+pub use peripherals::*;
+
 #[cfg(feature = "_time-driver")]
 mod time_driver;
-
-pub mod peripherals {
-    pub use ra_metapac::pac::peripherals::*;
-}
 
 pub mod _macros {
     pub use crate::bind_interrupts;
@@ -34,7 +37,7 @@ impl Default for Config {
     }
 }
 
-pub fn init(config: Config) -> peripherals::Peripherals {
+pub fn init(config: Config) -> Peripherals {
     critical_section::with(|_cs| {
         // Initialize clocks
         let clocks = system::init(config.system);
@@ -43,6 +46,7 @@ pub fn init(config: Config) -> peripherals::Peripherals {
         #[cfg(feature = "_time-driver")]
         time_driver::init(_cs);
         
-        unsafe { peripherals::Peripherals::steal() }
+        unsafe { Peripherals::steal() }
     })
 }
+

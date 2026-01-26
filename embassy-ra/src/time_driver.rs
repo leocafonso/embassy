@@ -4,9 +4,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use critical_section::{CriticalSection, Mutex};
 use embassy_time_driver::Driver;
 use embassy_time_queue_utils::Queue;
-use crate::pac;
-use crate::peripherals;
-use ra_metapac::timer::{GTP, regs};
+use ra_metapac::gpt;
 
 #[cfg(feature = "defmt")]
 use defmt::*;
@@ -15,6 +13,82 @@ use log::*;
 
 // Include auto-generated IRQ bindings from build.rs
 include!(concat!(env!("OUT_DIR"), "/irq_bindings.rs"));
+
+// ============================================================================
+// GPT channel selection via cfg
+// ============================================================================
+
+#[cfg(time_driver_gpt0)]
+mod gpt_cfg {
+    pub type T = crate::peripherals::GPT0;
+    pub const GPT: crate::pac::gpt::Gpt = unsafe { 
+        crate::pac::gpt::Gpt::from_ptr(crate::pac::GPT0.as_ptr()) 
+    };
+    pub use super::irq_allocations::{GPT0_COUNTER_OVERFLOW_IRQ as OVF_IRQ, GPT0_CAPTURE_COMPARE_A_IRQ as CCMPA_IRQ};
+    pub use super::event_ids::{GPT0_COUNTER_OVERFLOW as OVF_EVENT, GPT0_CAPTURE_COMPARE_A as CCMPA_EVENT};
+}
+
+#[cfg(time_driver_gpt1)]
+mod gpt_cfg {
+    pub type T = crate::peripherals::GPT1;
+    pub const GPT: crate::pac::gpt::Gpt = unsafe { 
+        crate::pac::gpt::Gpt::from_ptr(crate::pac::GPT1.as_ptr()) 
+    };
+    pub use super::irq_allocations::{GPT1_COUNTER_OVERFLOW_IRQ as OVF_IRQ, GPT1_CAPTURE_COMPARE_A_IRQ as CCMPA_IRQ};
+    pub use super::event_ids::{GPT1_COUNTER_OVERFLOW as OVF_EVENT, GPT1_CAPTURE_COMPARE_A as CCMPA_EVENT};
+}
+
+#[cfg(time_driver_gpt2)]
+mod gpt_cfg {
+    pub type T = crate::peripherals::GPT2;
+    pub const GPT: crate::pac::gpt::Gpt = unsafe { 
+        crate::pac::gpt::Gpt::from_ptr(crate::pac::GPT2.as_ptr()) 
+    };
+    pub use super::irq_allocations::{GPT2_COUNTER_OVERFLOW_IRQ as OVF_IRQ, GPT2_CAPTURE_COMPARE_A_IRQ as CCMPA_IRQ};
+    pub use super::event_ids::{GPT2_COUNTER_OVERFLOW as OVF_EVENT, GPT2_CAPTURE_COMPARE_A as CCMPA_EVENT};
+}
+
+#[cfg(time_driver_gpt3)]
+mod gpt_cfg {
+    pub type T = crate::peripherals::GPT3;
+    pub const GPT: crate::pac::gpt::Gpt = unsafe { 
+        crate::pac::gpt::Gpt::from_ptr(crate::pac::GPT3.as_ptr()) 
+    };
+    pub use super::irq_allocations::{GPT3_COUNTER_OVERFLOW_IRQ as OVF_IRQ, GPT3_CAPTURE_COMPARE_A_IRQ as CCMPA_IRQ};
+    pub use super::event_ids::{GPT3_COUNTER_OVERFLOW as OVF_EVENT, GPT3_CAPTURE_COMPARE_A as CCMPA_EVENT};
+}
+
+#[cfg(time_driver_gpt4)]
+mod gpt_cfg {
+    pub type T = crate::peripherals::GPT4;
+    pub const GPT: crate::pac::gpt::Gpt = unsafe { 
+        crate::pac::gpt::Gpt::from_ptr(crate::pac::GPT4.as_ptr()) 
+    };
+    pub use super::irq_allocations::{GPT4_COUNTER_OVERFLOW_IRQ as OVF_IRQ, GPT4_CAPTURE_COMPARE_A_IRQ as CCMPA_IRQ};
+    pub use super::event_ids::{GPT4_COUNTER_OVERFLOW as OVF_EVENT, GPT4_CAPTURE_COMPARE_A as CCMPA_EVENT};
+}
+
+#[cfg(time_driver_gpt5)]
+mod gpt_cfg {
+    pub type T = crate::peripherals::GPT5;
+    pub const GPT: crate::pac::gpt::Gpt = unsafe { 
+        crate::pac::gpt::Gpt::from_ptr(crate::pac::GPT5.as_ptr()) 
+    };
+    pub use super::irq_allocations::{GPT5_COUNTER_OVERFLOW_IRQ as OVF_IRQ, GPT5_CAPTURE_COMPARE_A_IRQ as CCMPA_IRQ};
+    pub use super::event_ids::{GPT5_COUNTER_OVERFLOW as OVF_EVENT, GPT5_CAPTURE_COMPARE_A as CCMPA_EVENT};
+}
+
+// Re-export selected GPT configuration
+#[allow(unused_imports)]
+use gpt_cfg::*;
+
+fn regs() -> gpt::Gpt {
+    gpt_cfg::GPT
+}
+
+fn icu() -> ra_metapac::icu::Icu {
+    ra_metapac::ICU
+}
 
 // Simple interrupt number struct for NVIC operations
 #[derive(Copy, Clone)]
@@ -38,11 +112,11 @@ embassy_time_driver::time_driver_impl!(static DRIVER: TimerDriver = TimerDriver 
 
 impl Driver for TimerDriver {
     fn now(&self) -> u64 {
-        let gpt = pac::GPT0;
-        let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
+        let r = regs();
+        let bit_width = gpt_bit_width();
         loop {
             let hi = self.overflow_count.load(Ordering::Acquire);
-            let lo = gpt.gtcnt().read();
+            let lo = r.gtcnt().read();
             let hi2 = self.overflow_count.load(Ordering::Acquire);
             if hi == hi2 {
                 if bit_width == 32 {
@@ -68,42 +142,39 @@ impl Driver for TimerDriver {
 
 impl TimerDriver {
     fn init(&'static self, _cs: CriticalSection) {
-        let gpt = pac::GPT0;
-        let icu = pac::ICU;
-        let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
+        let r = regs();
+        let icu = icu();
+        let bit_width = gpt_bit_width();
         debug!("Timer driver init ({}-bit, 8MHz)", bit_width);
-        // Enable GPT0 clock
-        let gpt0 = unsafe { peripherals::GPT0::steal() };
-        unsafe { crate::mstp::enable_clock(gpt0) };
+        
+        // Enable GPT clock using type T
+        unsafe { crate::mstp::enable_clock(*T::steal()) };
 
         // Stop timer
-        gpt.gtcr().modify(|w| w.set_cst(false));
+        r.gtcr().modify(|w| w.set_cst(false));
 
         // Set period to max
         if bit_width == 32 {
-            gpt.gtpr().write_value(0xFFFF_FFFF);
+            r.gtpr().write_value(0xFFFF_FFFF);
         } else {
-            gpt.gtpr().write_value(0x0000_FFFF);
+            r.gtpr().write_value(0x0000_FFFF);
         }
-        gpt.gtcnt().write_value(0);
+        r.gtcnt().write_value(0);
 
-        // Get auto-allocated IRQ slots from build.rs
-        let idx_ovf = irq_allocations::GPT0_COUNTER_OVERFLOW_IRQ as usize;
-        let idx_ccmpa = irq_allocations::GPT0_CAPTURE_COMPARE_A_IRQ as usize;
+        // Get auto-allocated IRQ slots from build.rs (now uses selected GPT channel)
+        let idx_ovf = gpt_cfg::OVF_IRQ as usize;
+        let idx_ccmpa = gpt_cfg::CCMPA_IRQ as usize;
 
         // Map events to allocated IELSR slots using auto-generated event IDs
-        icu.ielsr(idx_ovf).write_value(event_ids::GPT0_COUNTER_OVERFLOW as u32);
-        icu.ielsr(idx_ccmpa).write_value(event_ids::GPT0_CAPTURE_COMPARE_A as u32);
+        icu.ielsr(idx_ovf).write_value(gpt_cfg::OVF_EVENT as u32);
+        icu.ielsr(idx_ccmpa).write_value(gpt_cfg::CCMPA_EVENT as u32);
+
+        debug!("OVF event={}, irq={}", gpt_cfg::OVF_EVENT, idx_ovf);
+        debug!("CCMPA event={}, irq={}", gpt_cfg::CCMPA_EVENT, idx_ccmpa);
 
         // Clear any pending interrupts in ICU
         icu.ielsr(idx_ovf).modify(|w| *w &= !(1 << 16));
         icu.ielsr(idx_ccmpa).modify(|w| *w &= !(1 << 16));
-
-        // Enable overflow interrupt and compare match A in GPT
-        gpt.gtintad().modify(|w| {
-            w.set_gtintv(true); // Overflow
-            w.set_gtinta(true); // Compare Match A
-        });
 
         // Enable interrupts in NVIC using auto-allocated IRQ numbers
         unsafe {
@@ -112,16 +183,16 @@ impl TimerDriver {
         }
 
         // Start timer
-        gpt.gtcr().modify(|w| w.set_cst(true));
+        r.gtcr().modify(|w| w.set_cst(true));
     }
 
     fn set_alarm(&self, at: u64) {
-        let gpt = pac::GPT0;
-        let bit_width = <peripherals::GPT0 as crate::pac::Peripheral>::metadata().bit_width.unwrap_or(32);
+        let r = regs();
+        let bit_width = gpt_bit_width();
         
         let now = self.now();
         if at <= now {
-            gpt.gtccra().write_value(gpt.gtcnt().read());
+            r.gtccra().write_value(r.gtcnt().read());
             return;
         }
 
@@ -129,9 +200,9 @@ impl TimerDriver {
         let max_diff = if bit_width == 32 { 0xFFFF_FFFF } else { 0x0000_FFFF };
         
         if diff < max_diff {
-            gpt.gtccra().write_value((at & max_diff) as u32);
+            r.gtccra().write_value((at & max_diff) as u32);
         } else {
-            gpt.gtccra().write_value(max_diff as u32);
+            r.gtccra().write_value(max_diff as u32);
         }
     }
 }
@@ -139,18 +210,18 @@ impl TimerDriver {
 #[allow(non_snake_case)]
 pub(crate) unsafe fn on_interrupt() {
     let irq = (cortex_m::peripheral::Peripherals::steal().SCB.icsr.read() & 0x1FF) as usize - 16;
-    let icu = pac::ICU;
+    let icu = icu();
     let mut ielsr = icu.ielsr(irq).read();
     ielsr &= !(1 << 16); // Clear IR bit
     icu.ielsr(irq).write_value(ielsr);
     let _ = icu.ielsr(irq).read(); // Read back to ensure it's cleared
 
-    let gpt = pac::GPT0;
-    let st = gpt.gtst().read();
+    let r = regs();
+    let st = r.gtst().read();
     
     if st.tcfpo() {
         // Overflow
-        gpt.gtst().write(|w| {
+        r.gtst().write(|w| {
             w.set_tcfpo(false);
         });
         DRIVER.overflow_count.fetch_add(1, Ordering::Relaxed);
@@ -158,7 +229,7 @@ pub(crate) unsafe fn on_interrupt() {
 
     if st.tcfa() {
         // Compare match A
-        gpt.gtst().write(|w| {
+        r.gtst().write(|w| {
             w.set_tcfa(false);
         });
     }
@@ -174,4 +245,10 @@ pub(crate) unsafe fn on_interrupt() {
 
 pub(crate) fn init(cs: CriticalSection) {
     DRIVER.init(cs)
+}
+
+fn gpt_bit_width() -> u32 {
+    // TODO: Get from peripheral metadata when traits are set up
+    // For now, assume 16-bit for GPT16E variants
+    16
 }
