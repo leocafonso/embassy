@@ -7,6 +7,10 @@
 
 use core::mem::MaybeUninit;
 
+// Option bytes configuration module
+pub mod option_bytes;
+
+
 // ============================================================================
 // Family-specific modules
 // ============================================================================

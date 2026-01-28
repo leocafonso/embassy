@@ -1,4 +1,5 @@
 use crate::pac;
+use defmt::debug;
 
 // Use direct PAC constants instead of steal pattern
 fn mstp() -> pac::mstp::Mstp {
@@ -187,8 +188,10 @@ impl<T: SealedPeripheral> Peripheral for T {}
 /// appropriate synchronization if multiple contexts access the same MSTP register.
 pub unsafe fn enable_clock<T: Peripheral>(_peri: T) {
     let metadata = T::metadata();
+    debug!("Enabling clock for {}", metadata.name);
     if let Some(mstp) = metadata.mstp {
         let bit = mstp.bit;
+        debug!("MSTP register: {} bit: {}", mstp.register, bit);
         match mstp.register {
             "MSTPCRA" => modify_mstpcra(bit, |r| *r &= !(1 << bit)),
             "MSTPCRB" => modify_mstpcrb(bit, |r| *r &= !(1 << bit)),
@@ -207,8 +210,10 @@ pub unsafe fn enable_clock<T: Peripheral>(_peri: T) {
 /// appropriate synchronization if multiple contexts access the same MSTP register.
 pub unsafe fn disable_clock<T: Peripheral>(_peri: T) {
     let metadata = T::metadata();
+    debug!("Disabling clock for {}", metadata.name);
     if let Some(mstp) = metadata.mstp {
         let bit = mstp.bit;
+        debug!("MSTP register: {} bit: {}", mstp.register, bit);
         match mstp.register {
             "MSTPCRA" => modify_mstpcra(bit, |r| *r |= 1 << bit),
             "MSTPCRB" => modify_mstpcrb(bit, |r| *r |= 1 << bit),
