@@ -55,38 +55,44 @@ pub const fn is_valid_irq_for_event(irq_numbers: &[u8], irq: u8) -> bool {
     false
 }
 
-/// Simplified bind_interrupts macro that requires explicit IRQ specification.
-/// For grouped events (RA2 family), the IRQ must be one of the allowed positions.
-/// For unrestricted events, any IRQ can be used.
+/// Bind event interrupts to handlers.
 ///
 /// Usage:
 /// ```ignore
 /// bind_interrupts!(struct Irqs {
-///     IEL0 => TimerHandler, Gpt0CounterOverflow;
-///     IEL4 => UartHandler, SciUart0Rxi;
+///     Gpt0CounterOverflow => TimerHandler;
+///     Gpt0CaptureCompareA => TimerHandler;
 /// });
 /// ```
 ///
-/// Note: For RA2 devices with grouped interrupts, ensure the IRQ slot is valid for the event.
-/// The Event::IRQ_NUMBERS constant contains the allowed IELSR indices for each event.
-/// Using an invalid slot will compile but the interrupt won't fire correctly at runtime.
+/// Note: Event-to-IEL slot allocation is performed by the build script using the
+/// per-family `Event::IRQ_NUMBERS` constraints from the PAC metadata.
 #[macro_export]
 macro_rules! bind_interrupts {
     ($vis:vis struct $name:ident {
         $(
-            $irq:ident => $handler:ty, $event:ident;
+            $event:ident => $($handler:ty),+;
         )*
     }) => {
         $vis struct $name;
 
         $(
-            #[no_mangle]
-            unsafe extern "C" fn $irq() {
-                <$handler as $crate::interrupt::Handler<$crate::interrupt::events::$event>>::on_interrupt();
-            }
+            const _: () = {
+                #[export_name = concat!("__embassy_ra_event_", stringify!($event))]
+                pub unsafe extern "C" fn handler() {
+                    $(
+                        <$handler as $crate::interrupt::Handler<$crate::interrupt::events::$event>>::on_interrupt();
+                    )+
+                }
+            };
 
-            unsafe impl $crate::interrupt::Binding<$crate::interrupt::events::$event, $handler> for $name {}
+            $crate::bind_interrupts!(@inner
+                $(unsafe impl $crate::interrupt::Binding<$crate::interrupt::events::$event, $handler> for $name {})+
+            );
         )*
+    };
+    (@inner $($t:tt)*) => {
+        $($t)*
     };
 }
 

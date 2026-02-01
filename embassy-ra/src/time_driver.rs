@@ -14,6 +14,8 @@ use log::*;
 // Include auto-generated IRQ bindings from build.rs
 include!(concat!(env!("OUT_DIR"), "/irq_bindings.rs"));
 
+struct TimeDriverInterruptHandler;
+
 // ============================================================================
 // GPT channel selection via cfg
 // ============================================================================
@@ -99,6 +101,51 @@ unsafe impl cortex_m::interrupt::InterruptNumber for IrqNum {
         self.0
     }
 }
+
+macro_rules! impl_time_driver_event_handlers {
+    ($ovf:ident, $ccmpa:ident) => {
+        impl crate::interrupt::Handler<crate::interrupt::events::$ovf> for TimeDriverInterruptHandler {
+            unsafe fn on_interrupt() {
+                on_interrupt();
+            }
+        }
+        impl crate::interrupt::Handler<crate::interrupt::events::$ccmpa> for TimeDriverInterruptHandler {
+            unsafe fn on_interrupt() {
+                on_interrupt();
+            }
+        }
+
+        crate::bind_interrupts!(struct TimeDriverIrqs {
+            $ovf => TimeDriverInterruptHandler;
+            $ccmpa => TimeDriverInterruptHandler;
+        });
+
+        const _: () = {
+            let _ = core::mem::size_of::<TimeDriverIrqs>();
+        };
+    };
+}
+
+#[cfg(time_driver_gpt0)]
+impl_time_driver_event_handlers!(Gpt0CounterOverflow, Gpt0CaptureCompareA);
+#[cfg(time_driver_gpt1)]
+impl_time_driver_event_handlers!(Gpt1CounterOverflow, Gpt1CaptureCompareA);
+#[cfg(time_driver_gpt2)]
+impl_time_driver_event_handlers!(Gpt2CounterOverflow, Gpt2CaptureCompareA);
+#[cfg(time_driver_gpt3)]
+impl_time_driver_event_handlers!(Gpt3CounterOverflow, Gpt3CaptureCompareA);
+#[cfg(time_driver_gpt4)]
+impl_time_driver_event_handlers!(Gpt4CounterOverflow, Gpt4CaptureCompareA);
+#[cfg(time_driver_gpt5)]
+impl_time_driver_event_handlers!(Gpt5CounterOverflow, Gpt5CaptureCompareA);
+#[cfg(time_driver_gpt6)]
+impl_time_driver_event_handlers!(Gpt6CounterOverflow, Gpt6CaptureCompareA);
+#[cfg(time_driver_gpt7)]
+impl_time_driver_event_handlers!(Gpt7CounterOverflow, Gpt7CaptureCompareA);
+#[cfg(time_driver_gpt8)]
+impl_time_driver_event_handlers!(Gpt8CounterOverflow, Gpt8CaptureCompareA);
+#[cfg(time_driver_gpt9)]
+impl_time_driver_event_handlers!(Gpt9CounterOverflow, Gpt9CaptureCompareA);
 
 struct TimerDriver {
     overflow_count: AtomicU32,
