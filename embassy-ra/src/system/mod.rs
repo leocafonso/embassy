@@ -17,11 +17,11 @@ pub mod option_bytes;
 
 // RA2 family (RA2E1, RA2E2, RA2L1)
 #[cfg(any(ra2e1, ra2e2, ra2l1))]
-mod ra2;
+mod ra6;
 #[cfg(any(ra2e1, ra2e2, ra2l1))]
-pub use ra2::Config;
+pub use ra6::Config;
 #[cfg(any(ra2e1, ra2e2, ra2l1))]
-pub(crate) use ra2::init;
+pub(crate) use ra6::init;
 
 // RA4 family (RA4M1, RA4M2, RA4M3, RA4E1, RA4E2, RA4W1)
 #[cfg(any(ra4m1, ra4m2, ra4m3, ra4e1, ra4e2, ra4w1))]

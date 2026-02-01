@@ -18,8 +18,6 @@ struct PeripheralIrqConfig {
     peripheral_name: &'static str,
     /// Signal names this peripheral needs (e.g., ["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"])
     signals: &'static [&'static str],
-    /// Handler function to call for these events
-    handler: &'static str,
 }
 
 /// GPT Timer configurations (for time driver)
@@ -28,25 +26,21 @@ const GPT_CONFIGS: &[PeripheralIrqConfig] = &[
         feature: "TIME_DRIVER_GPT0",
         peripheral_name: "GPT0",
         signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-        handler: "crate::time_driver::on_interrupt",
     },
     PeripheralIrqConfig {
         feature: "TIME_DRIVER_GPT1",
         peripheral_name: "GPT1",
         signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-        handler: "crate::time_driver::on_interrupt",
     },
     PeripheralIrqConfig {
         feature: "TIME_DRIVER_GPT2",
         peripheral_name: "GPT2",
         signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-        handler: "crate::time_driver::on_interrupt",
     },
     PeripheralIrqConfig {
         feature: "TIME_DRIVER_GPT3",
         peripheral_name: "GPT3",
         signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-        handler: "crate::time_driver::on_interrupt",
     },
 ];
 
@@ -89,6 +83,22 @@ fn find_events_for_config(config: &PeripheralIrqConfig) -> Vec<&'static Event> {
         .iter()
         .filter(|event| event_names.iter().any(|name| name == event.name))
         .collect()
+}
+
+/// Convert metadata event names (e.g., "GPT0_COUNTER_OVERFLOW") to PAC-style CamelCase (e.g., "Gpt0CounterOverflow")
+fn event_symbol_name(event_name: &str) -> String {
+    event_name
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + &chars.as_str().to_ascii_lowercase(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("")
 }
 
 // ============================================================================
@@ -366,7 +376,10 @@ fn allocate_irq_slots(required_events: &[&Event]) -> BTreeMap<&'static str, u8> 
 fn generate_interrupt_bindings(out_dir: &PathBuf) {
     let required_events = get_required_events();
     let allocations = allocate_irq_slots(&required_events);
-    let enabled_configs = get_enabled_configs();
+    let mut unique_events: BTreeMap<&'static str, &'static Event> = BTreeMap::new();
+    for event in &required_events {
+        unique_events.entry(event.name).or_insert(*event);
+    }
 
     let mut code = String::new();
     writeln!(code, "// Auto-generated interrupt bindings").unwrap();
@@ -387,38 +400,33 @@ fn generate_interrupt_bindings(out_dir: &PathBuf) {
     // Generate event IDs
     writeln!(code, "/// Event IDs for ICU IELSR programming").unwrap();
     writeln!(code, "pub mod event_ids {{").unwrap();
-    for event in &required_events {
+    for event in unique_events.values() {
         let const_name = event.name.to_uppercase();
         writeln!(code, "    pub const {}: u16 = {};", const_name, event.id).unwrap();
     }
     writeln!(code, "}}").unwrap();
     writeln!(code).unwrap();
 
-    // Generate IEL interrupt handlers for each enabled peripheral
-    // Group events by handler to generate efficient dispatch
-    let mut handler_to_events: BTreeMap<&str, Vec<&Event>> = BTreeMap::new();
-    for config in &enabled_configs {
-        let events = find_events_for_config(config);
-        for event in events {
-            handler_to_events
-                .entry(config.handler)
-                .or_default()
-                .push(event);
-        }
+    // Generate externs for event handler symbols
+    writeln!(code, "extern \"C\" {{").unwrap();
+    for event in unique_events.values() {
+        let symbol = event_symbol_name(event.name);
+        writeln!(code, "    fn __embassy_ra_event_{}();", symbol).unwrap();
     }
+    writeln!(code, "}}").unwrap();
+    writeln!(code).unwrap();
 
-    // Generate handlers
-    for (handler, events) in &handler_to_events {
-        for event in events {
-            if let Some(&slot) = allocations.get(event.name) {
-                writeln!(code, "/// Interrupt handler for {} (IEL{})", event.name, slot).unwrap();
-                writeln!(code, "#[no_mangle]").unwrap();
-                writeln!(code, "#[allow(non_snake_case)]").unwrap();
-                writeln!(code, "pub unsafe extern \"C\" fn IEL{}() {{", slot).unwrap();
-                writeln!(code, "    {}();", handler).unwrap();
-                writeln!(code, "}}").unwrap();
-                writeln!(code).unwrap();
-            }
+    // Generate IEL interrupt handlers for each required event
+    for event in unique_events.values() {
+        if let Some(&slot) = allocations.get(event.name) {
+            let symbol = event_symbol_name(event.name);
+            writeln!(code, "/// Interrupt handler for {} (IEL{})", event.name, slot).unwrap();
+            writeln!(code, "#[no_mangle]").unwrap();
+            writeln!(code, "#[allow(non_snake_case)]").unwrap();
+            writeln!(code, "pub unsafe extern \"C\" fn IEL{}() {{", slot).unwrap();
+            writeln!(code, "    __embassy_ra_event_{}();", symbol).unwrap();
+            writeln!(code, "}}").unwrap();
+            writeln!(code).unwrap();
         }
     }
 
