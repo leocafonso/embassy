@@ -4,86 +4,11 @@ use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
 
-use ra_metapac::metadata::{self, Event, Peripheral};
+use ra_metapac::metadata::{self, Event};
 
 // ============================================================================
-// PERIPHERAL IRQ CONFIGURATION
+// EVENT SELECTION (ENV-DRIVEN)
 // ============================================================================
-
-/// Defines a peripheral's interrupt configuration
-struct PeripheralIrqConfig {
-    /// Cargo feature that enables this peripheral (without CARGO_FEATURE_ prefix)
-    feature: &'static str,
-    /// Peripheral name to match (e.g., "GPT0", "SCI1", "IIC0")
-    peripheral_name: &'static str,
-    /// Signal names this peripheral needs (e.g., ["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"])
-    signals: &'static [&'static str],
-}
-
-/// GPT Timer configurations (for time driver)
-const GPT_CONFIGS: &[PeripheralIrqConfig] = &[
-    PeripheralIrqConfig {
-        feature: "TIME_DRIVER_GPT0",
-        peripheral_name: "GPT0",
-        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-    },
-    PeripheralIrqConfig {
-        feature: "TIME_DRIVER_GPT1",
-        peripheral_name: "GPT1",
-        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-    },
-    PeripheralIrqConfig {
-        feature: "TIME_DRIVER_GPT2",
-        peripheral_name: "GPT2",
-        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-    },
-    PeripheralIrqConfig {
-        feature: "TIME_DRIVER_GPT3",
-        peripheral_name: "GPT3",
-        signals: &["COUNTER_OVERFLOW", "CAPTURE_COMPARE_A"],
-    },
-];
-
-/// Get all peripheral configurations
-fn get_all_peripheral_configs() -> Vec<&'static PeripheralIrqConfig> {
-    let mut configs: Vec<&'static PeripheralIrqConfig> = Vec::new();
-    
-    // Add GPT configs
-    configs.extend(GPT_CONFIGS.iter());
-    
-    // Add more peripheral configs here as needed:
-    // configs.extend(SCI_CONFIGS.iter());
-    // configs.extend(IIC_CONFIGS.iter());
-    // configs.extend(SPI_CONFIGS.iter());
-    
-    configs
-}
-
-/// Find the peripheral by name from metadata
-fn find_peripheral(name: &str) -> Option<&'static Peripheral> {
-    metadata::METADATA.peripherals.iter().find(|p| p.name == name)
-}
-
-/// Find events for a peripheral config using the peripheral's interrupt list
-fn find_events_for_config(config: &PeripheralIrqConfig) -> Vec<&'static Event> {
-    let peripheral = match find_peripheral(config.peripheral_name) {
-        Some(p) => p,
-        None => return Vec::new(),
-    };
-    
-    // Build event names from peripheral name + signal (e.g., "GPT0" + "COUNTER_OVERFLOW" -> "GPT0_COUNTER_OVERFLOW")
-    let event_names: Vec<String> = peripheral.interrupts
-        .iter()
-        .filter(|signal| config.signals.contains(signal))
-        .map(|signal| format!("{}_{}", peripheral.name, signal))
-        .collect();
-    
-    // Find the corresponding Event entries with full metadata
-    metadata::METADATA.events
-        .iter()
-        .filter(|event| event_names.iter().any(|name| name == event.name))
-        .collect()
-}
 
 /// Convert metadata event names (e.g., "GPT0_COUNTER_OVERFLOW") to PAC-style CamelCase (e.g., "Gpt0CounterOverflow")
 fn event_symbol_name(event_name: &str) -> String {
@@ -101,12 +26,64 @@ fn event_symbol_name(event_name: &str) -> String {
         .join("")
 }
 
+/// Collect additional events from EMBASSY_RA_EVENTS.
+/// Accepts metadata names (e.g., "GPT0_COUNTER_OVERFLOW") or PAC symbols (e.g., "Gpt0CounterOverflow").
+fn get_env_events() -> Vec<&'static Event> {
+    let mut names: Vec<String> = Vec::new();
+
+    if let Ok(list) = env::var("EMBASSY_RA_EVENTS") {
+        names.extend(
+            list.split(|c: char| c == ',' || c.is_whitespace())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string()),
+        );
+    }
+
+    if names.is_empty() {
+        return Vec::new();
+    }
+
+    metadata::METADATA
+        .events
+        .iter()
+        .filter(|event| {
+            let symbol = event_symbol_name(event.name);
+            names.iter().any(|n| n == event.name || n == &symbol)
+        })
+        .collect()
+}
+
+fn find_event_by_name(name: &str) -> Option<&'static Event> {
+    metadata::METADATA.events.iter().find(|event| event.name == name)
+}
+
+fn get_time_driver_events(time_driver: Option<&str>) -> Vec<&'static Event> {
+    let Some(time_driver) = time_driver else {
+        return Vec::new();
+    };
+
+    let ovf = format!("{}_COUNTER_OVERFLOW", time_driver);
+    let ccmpa = format!("{}_CAPTURE_COMPARE_A", time_driver);
+
+    let mut events = Vec::new();
+    if let Some(event) = find_event_by_name(&ovf) {
+        events.push(event);
+    }
+    if let Some(event) = find_event_by_name(&ccmpa) {
+        events.push(event);
+    }
+
+    events
+}
+
 // ============================================================================
 // BUILD SCRIPT MAIN
 // ============================================================================
 
 fn main() {
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+
+    println!("cargo:rerun-if-env-changed=EMBASSY_RA_EVENTS");
 
     let chip_name = env::vars()
         .map(|(a, _)| a)
@@ -152,7 +129,7 @@ fn main() {
         }
 
         generate_memory_x(&out);
-        generate_interrupt_bindings(&out);
+        generate_interrupt_bindings(&out, time_driver.as_deref());
         generate_peripherals(&out, time_driver.as_deref());
     }
 
@@ -318,19 +295,11 @@ fn generate_memory_x(out: &PathBuf) {
 }
 
 /// Get enabled peripheral configs based on Cargo features
-fn get_enabled_configs() -> Vec<&'static PeripheralIrqConfig> {
-    get_all_peripheral_configs()
-        .into_iter()
-        .filter(|config| env::var(format!("CARGO_FEATURE_{}", config.feature)).is_ok())
-        .collect()
-}
-
 /// Collect all required events from enabled peripherals
-fn get_required_events() -> Vec<&'static Event> {
-    get_enabled_configs()
-        .iter()
-        .flat_map(|config| find_events_for_config(config))
-        .collect()
+fn get_required_events(time_driver: Option<&str>) -> Vec<&'static Event> {
+    let mut events = get_env_events();
+    events.extend(get_time_driver_events(time_driver));
+    events
 }
 
 /// Allocates IRQ slots to events, respecting group constraints
@@ -373,8 +342,9 @@ fn allocate_irq_slots(required_events: &[&Event]) -> BTreeMap<&'static str, u8> 
 }
 
 /// Generates the interrupt binding code
-fn generate_interrupt_bindings(out_dir: &PathBuf) {
-    let required_events = get_required_events();
+fn generate_interrupt_bindings(out_dir: &PathBuf, time_driver: Option<&str>) {
+    let required_events = get_required_events(time_driver);
+    validate_time_driver_events(time_driver, &required_events);
     let allocations = allocate_irq_slots(&required_events);
     let mut unique_events: BTreeMap<&'static str, &'static Event> = BTreeMap::new();
     for event in &required_events {
@@ -431,4 +401,25 @@ fn generate_interrupt_bindings(out_dir: &PathBuf) {
     }
 
     fs::write(out_dir.join("irq_bindings.rs"), code).unwrap();
+}
+
+fn validate_time_driver_events(time_driver: Option<&str>, required_events: &[&Event]) {
+    let Some(time_driver) = time_driver else {
+        return;
+    };
+
+    let ovf = format!("{}_COUNTER_OVERFLOW", time_driver);
+    let ccmpa = format!("{}_CAPTURE_COMPARE_A", time_driver);
+
+    let has_ovf = required_events.iter().any(|e| e.name == ovf);
+    let has_ccmpa = required_events.iter().any(|e| e.name == ccmpa);
+
+    if has_ovf && has_ccmpa {
+        return;
+    }
+
+    panic!(
+        "Missing time driver events for {}. Provide them via EMBASSY_RA_EVENTS or EMBASSY_RA_EVENTS_FILE (need {} and {}).",
+        time_driver, ovf, ccmpa
+    );
 }

@@ -13,3 +13,7 @@ target = "thumbv8m.main-none-eabihf"
 
 [env]
 DEFMT_LOG = "trace"
+# EMBASSY_RA_EVENTS = """
+# GPT1_COUNTER_OVERFLOW,
+# GPT1_CAPTURE_COMPARE_A
+# """

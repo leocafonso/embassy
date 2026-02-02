@@ -5,8 +5,33 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use embassy_ra as hal;
+
 use hal::gpio::{Output, Level};
 use {defmt_rtt as _, panic_probe as _};
+// use hal::interrupt;
+// // Example: bind GPT0 time-driver events to a handler.
+// // This matches the events listed in embassy-ra-events.txt.
+// struct TimeIrqHandler;
+
+// impl interrupt::Handler<interrupt::events::Gpt1CounterOverflow> for TimeIrqHandler {
+//     unsafe fn on_interrupt() {
+//         // Handle GPT0 overflow interrupt
+//     }
+// }
+
+// impl interrupt::Handler<interrupt::events::Gpt1CaptureCompareA> for TimeIrqHandler {
+//     unsafe fn on_interrupt() {
+//         // Handle GPT0 compare A interrupt
+//     }
+// }
+
+// hal::bind_interrupts!(struct Irqs {
+//     Gpt1CounterOverflow => TimeIrqHandler;
+//     Gpt1CaptureCompareA => TimeIrqHandler;
+// });
+
+// #[allow(dead_code)]
+// const _: usize = core::mem::size_of::<Irqs>();
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
