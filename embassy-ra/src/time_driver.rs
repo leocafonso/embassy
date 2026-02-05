@@ -213,15 +213,19 @@ impl TimerDriver {
         let idx_ccmpa = gpt_cfg::CCMPA_IRQ as usize;
 
         // Map events to allocated IELSR slots using auto-generated event IDs
-        icu.ielsr(idx_ovf).write_value(gpt_cfg::OVF_EVENT as u32);
-        icu.ielsr(idx_ccmpa).write_value(gpt_cfg::CCMPA_EVENT as u32);
+        icu.ielsr(idx_ovf).modify(|w| {
+            w.set_iels(ra_metapac::icu::vals::Iels::from_bits(gpt_cfg::OVF_EVENT as u16))
+        });
+        icu.ielsr(idx_ccmpa).modify(|w| {
+            w.set_iels(ra_metapac::icu::vals::Iels::from_bits(gpt_cfg::CCMPA_EVENT as u16))
+        });
 
         debug!("OVF event={}, irq={}", gpt_cfg::OVF_EVENT, idx_ovf);
         debug!("CCMPA event={}, irq={}", gpt_cfg::CCMPA_EVENT, idx_ccmpa);
 
         // Clear any pending interrupts in ICU
-        icu.ielsr(idx_ovf).modify(|w| *w &= !(1 << 16));
-        icu.ielsr(idx_ccmpa).modify(|w| *w &= !(1 << 16));
+        icu.ielsr(idx_ovf).modify(|w| w.set_ir(false));
+        icu.ielsr(idx_ccmpa).modify(|w| w.set_ir(false));
 
         // Enable interrupts in NVIC using auto-allocated IRQ numbers
         unsafe {
@@ -231,6 +235,7 @@ impl TimerDriver {
 
         // Start timer
         r.gtcr().modify(|w| w.set_cst(true));
+        debug!("gtcr {}", r.gtcr().read());
     }
 
     fn set_alarm(&self, at: u64) {
@@ -257,12 +262,8 @@ impl TimerDriver {
 #[allow(non_snake_case)]
 pub(crate) unsafe fn on_interrupt() {
     let irq = (cortex_m::peripheral::Peripherals::steal().SCB.icsr.read() & 0x1FF) as usize - 16;
-    let icu = icu();
-    let mut ielsr = icu.ielsr(irq).read();
-    ielsr &= !(1 << 16); // Clear IR bit
-    icu.ielsr(irq).write_value(ielsr);
-    let _ = icu.ielsr(irq).read(); // Read back to ensure it's cleared
-
+    crate::interrupt::clear_icu_ir(irq);
+    debug!("Int");
     let r = regs();
     let st = r.gtst().read();
     

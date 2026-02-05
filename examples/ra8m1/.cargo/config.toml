@@ -1,5 +1,5 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
-runner = "probe-rs run --chip R7FA8M1AH --chip-description-path ../../../probe-rs/probe-rs/targets/RA8M1_Series.yaml"
+runner = "probe-rs run --chip R7FA8M1AH"
 
 [target.thumbv8m.main-none-eabihf]
 rustflags = [
