@@ -9,8 +9,13 @@
 //!
 //! Reference: RA8M1 Hardware Manual, Section 8 (Clocks)
 
-use crate::peripherals::SYSC;
+use crate::pac;
 use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
+
+// Use direct PAC access
+fn sysc() -> pac::sysc::Sysc {
+    pac::SYSC
+}
 
 /// MOCO frequency (fixed at 8 MHz)
 pub const MOCO_FREQ: Hertz = Hertz(8_000_000);
@@ -97,7 +102,7 @@ impl Config {
 
 /// Initialize clocks with the given configuration
 pub(crate) fn init(config: Config) -> Clocks {
-    let sysc = unsafe { SYSC::steal() };
+    let sysc = sysc();
     
     // Calculate source frequency
     let source_freq = match config.source {
@@ -118,16 +123,21 @@ pub(crate) fn init(config: Config) -> Clocks {
     let fclk = Hertz(source_freq.0 / config.fclk_div.divisor());
     let bclk = Hertz(source_freq.0 / config.bclk_div.divisor());
     
-    // Configure SCKDIVCR
-    let sckdivcr = (config.pclkd_div as u32)
-        | ((config.pclkc_div as u32) << 4)
-        | ((config.pclkb_div as u32) << 8)
-        | ((config.pclka_div as u32) << 12)
-        | ((config.bclk_div as u32) << 16)
-        | ((config.iclk_div as u32) << 24)
-        | ((config.fclk_div as u32) << 28);
-    
-    sysc.sckdivcr().write_value(sckdivcr);
+    // Unlock register protection for clock configuration
+    sysc.prcr().write(|w| {
+        w.set_prkey(0xA5.into());  // Write key
+        w.set_prc0(true);   // Enable writing to clock registers
+    });
+
+    // Configure SCKDIVCR (System Clock Division Control Register)
+    sysc.sckdivcr().modify(|w| {
+        w.set_pckd((config.pclkd_div as u8).into());
+        w.set_pckc((config.pclkc_div as u8).into());
+        w.set_pckb((config.pclkb_div as u8).into());
+        w.set_pcka((config.pclka_div as u8).into());
+        w.set_ick((config.iclk_div as u8).into());
+        w.set_fck((config.fclk_div as u8).into());
+    });
     
     // Configure SCKSCR
     let cksel = match config.source {
@@ -139,7 +149,15 @@ pub(crate) fn init(config: Config) -> Clocks {
         ClockSource::Pll => 0b101,
     };
     
-    sysc.sckscr().write_value(cksel);
+    sysc.sckscr().modify(|w| {
+        w.set_cksel(cksel.into());
+    });
+
+    // Lock register protection
+    sysc.prcr().write(|w| {
+        w.set_prkey(0xA5.into());
+        w.set_prc0(false);
+    });
     
     Clocks {
         iclk,

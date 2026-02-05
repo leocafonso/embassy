@@ -18,6 +18,19 @@ pub trait Handler<E: Event> {
 
 pub unsafe trait Binding<E: Event, H: Handler<E>> {}
 
+#[inline]
+fn icu() -> ra_metapac::icu::Icu {
+    ra_metapac::ICU
+}
+
+/// Clear the ICU IELSR interrupt request flag using fieldset accessors.
+#[inline]
+pub(crate) fn clear_icu_ir(irq: usize) {
+    let icu = icu();
+    icu.ielsr(irq).modify(|w| w.set_ir(false));
+    let _ = icu.ielsr(irq).read();
+}
+
 
 pub mod events {
     use super::Event;
