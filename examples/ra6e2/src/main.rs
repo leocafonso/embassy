@@ -39,16 +39,16 @@ async fn main(_spawner: Spawner) {
     info!("Hello World!");
 
     // Create LED output on P104
-    let mut led = Output::new(p.P104, Level::Low);
+    let mut led = Output::new(p.P207, Level::Low);
 
     loop {
         info!("high");
         led.set_high();
-        Timer::after_millis(100).await;
+        Timer::after_millis(1000).await;
 
         info!("low");
         led.set_low();
-        Timer::after_millis(100).await;
+        Timer::after_millis(1000).await;
     }
 }
 

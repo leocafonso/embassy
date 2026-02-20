@@ -9,62 +9,10 @@
 //! Reference: RA4M1 Hardware Manual, Section 8 (Clocks)
 
 use crate::peripherals::SYSTEM;
-use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
-
-/// MOCO frequency (fixed at 8 MHz)
-pub const MOCO_FREQ: Hertz = Hertz(8_000_000);
-
-/// LOCO frequency (fixed at 32.768 kHz)
-pub const LOCO_FREQ: Hertz = Hertz(32_768);
+use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig, PllConfig, PllSource, PllInputDiv, PllMul, MOCO_FREQ, LOCO_FREQ};
 
 /// Maximum ICLK frequency for RA4M1
 pub const MAX_ICLK_FREQ: Hertz = Hertz(48_000_000);
-
-/// PLL configuration
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct PllConfig {
-    /// PLL input source (MOSC or HOCO)
-    pub source: PllSource,
-    /// PLL input divider (PLIDIV)
-    pub input_div: PllInputDiv,
-    /// PLL multiplier (PLLMUL) - actual multiplier is value + 0.5
-    pub mul: PllMul,
-}
-
-/// PLL input source
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PllSource {
-    /// Main oscillator
-    MainOsc,
-    /// HOCO
-    Hoco,
-}
-
-/// PLL input divider
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PllInputDiv {
-    Div1 = 0,
-    Div2 = 1,
-    Div3 = 2,
-}
-
-/// PLL multiplier
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PllMul {
-    /// x10.0
-    Mul10 = 0x13,
-    /// x10.5
-    Mul10_5 = 0x14,
-    /// x12.0
-    Mul12 = 0x17,
-    /// x12.5
-    Mul12_5 = 0x18,
-    // TODO: Add more multiplier values as needed
-}
 
 /// Clock configuration for RA4 family
 #[non_exhaustive]

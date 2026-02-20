@@ -8,19 +8,18 @@
 //!
 //! Reference: RA6M5 Hardware Manual, Section 8 (Clocks)
 
-use crate::pac;
-use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
+use defmt::debug;
+
+use ra_metapac::sysc::Sysc;
+use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig, PllConfig, PllSource, PllInputDiv, MOCO_FREQ, LOCO_FREQ};
+
+/// PLL2 configuration (alias for PLL config structure)
+pub type Pll2Config = PllConfig;
 
 // Use direct PAC access
-fn sysc() -> pac::sysc::Sysc {
-    pac::SYSC
+fn sysc() -> Sysc {
+    ra_metapac::SYSC
 }
-
-/// MOCO frequency (fixed at 8 MHz)
-pub const MOCO_FREQ: Hertz = Hertz(8_000_000);
-
-/// LOCO frequency (fixed at 32.768 kHz)
-pub const LOCO_FREQ: Hertz = Hertz(32_768);
 
 /// Maximum ICLK frequency for RA6 family (varies by sub-family)
 /// RA6E2: 200 MHz, RA6M5: 200 MHz, others: 120-200 MHz
@@ -31,104 +30,6 @@ pub const MAX_PCLKA_FREQ: Hertz = Hertz(100_000_000);
 
 /// Maximum PCLKB frequency
 pub const MAX_PCLKB_FREQ: Hertz = Hertz(50_000_000);
-
-/// PLL configuration
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct PllConfig {
-    /// PLL input source
-    pub source: PllSource,
-    /// PLL input divider (PLIDIV)
-    pub input_div: PllInputDiv,
-    /// PLL multiplier (PLLMUL)
-    pub mul: PllMul,
-    /// PLL output divider for PLLCLK
-    pub output_div: PllOutputDiv,
-}
-
-/// PLL2 configuration (for USB, etc.)
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Pll2Config {
-    /// PLL2 input source
-    pub source: PllSource,
-    /// PLL2 input divider
-    pub input_div: PllInputDiv,
-    /// PLL2 multiplier
-    pub mul: PllMul,
-    /// PLL2 output divider
-    pub output_div: PllOutputDiv,
-}
-
-/// PLL input source
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PllSource {
-    /// Main oscillator
-    MainOsc,
-    /// HOCO
-    Hoco,
-}
-
-/// PLL input divider
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PllInputDiv {
-    Div1 = 0,
-    Div2 = 1,
-    Div3 = 2,
-    Div4 = 3,
-}
-
-/// PLL multiplier (x10.0 to x30.0 in 0.5 steps)
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PllMul {
-    Mul10_0 = 0x13,
-    Mul10_5 = 0x14,
-    Mul11_0 = 0x15,
-    Mul11_5 = 0x16,
-    Mul12_0 = 0x17,
-    Mul12_5 = 0x18,
-    Mul20_0 = 0x27,
-    Mul20_5 = 0x28,
-    // TODO: Add all multiplier values
-}
-
-impl PllMul {
-    /// Get the actual multiplier value (x2 to avoid floats)
-    pub const fn value_x2(&self) -> u32 {
-        match self {
-            PllMul::Mul10_0 => 20,
-            PllMul::Mul10_5 => 21,
-            PllMul::Mul11_0 => 22,
-            PllMul::Mul11_5 => 23,
-            PllMul::Mul12_0 => 24,
-            PllMul::Mul12_5 => 25,
-            PllMul::Mul20_0 => 40,
-            PllMul::Mul20_5 => 41,
-        }
-    }
-}
-
-/// PLL output divider
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PllOutputDiv {
-    Div2 = 0,
-    Div3 = 1,
-    Div4 = 2,
-}
-
-impl PllOutputDiv {
-    pub const fn divisor(&self) -> u32 {
-        match self {
-            PllOutputDiv::Div2 => 2,
-            PllOutputDiv::Div3 => 3,
-            PllOutputDiv::Div4 => 4,
-        }
-    }
-}
 
 /// Clock configuration for RA6 family
 #[non_exhaustive]
@@ -181,12 +82,12 @@ impl Default for Config {
             pll: None,
             pll2: None,
             iclk_div: ClockDiv::Div1,
-            pclka_div: ClockDiv::Div1,
-            pclkb_div: ClockDiv::Div1,
-            pclkc_div: ClockDiv::Div1,
-            pclkd_div: ClockDiv::Div1,
-            fclk_div: ClockDiv::Div1,
-            bclk_div: ClockDiv::Div1,
+            pclka_div: ClockDiv::Div2,
+            pclkb_div: ClockDiv::Div2,
+            pclkc_div: ClockDiv::Div2,
+            pclkd_div: ClockDiv::Div2,
+            fclk_div: ClockDiv::Div4,
+            bclk_div: ClockDiv::Div2,
         }
     }
 }
@@ -201,12 +102,12 @@ impl Config {
             pll: None,
             pll2: None,
             iclk_div: ClockDiv::Div1,
-            pclka_div: ClockDiv::Div1,
-            pclkb_div: ClockDiv::Div1,
-            pclkc_div: ClockDiv::Div1,
-            pclkd_div: ClockDiv::Div1,
-            fclk_div: ClockDiv::Div1,
-            bclk_div: ClockDiv::Div1,
+            pclka_div: ClockDiv::Div2,
+            pclkb_div: ClockDiv::Div2,
+            pclkc_div: ClockDiv::Div2,
+            pclkd_div: ClockDiv::Div2,
+            fclk_div: ClockDiv::Div4,
+            bclk_div: ClockDiv::Div2,
         }
     }
     
@@ -286,9 +187,8 @@ pub(crate) fn init(config: Config) -> Clocks {
                 PllInputDiv::Div3 => 3,
                 PllInputDiv::Div4 => 4,
             };
-            
-            let vco_freq = (pll_input.0 / input_div) * pll.mul.value_x2() / 2;
-            Hertz(vco_freq / pll.output_div.divisor())
+
+            Hertz(pll_input.0 / input_div)  // Assuming output divider of /2 for PLLCLK
         }
     };
     
@@ -301,6 +201,16 @@ pub(crate) fn init(config: Config) -> Clocks {
     let fclk = Hertz(source_freq.0 / config.fclk_div.divisor());
     let bclk = Hertz(source_freq.0 / config.bclk_div.divisor());
     
+    debug!("Clock frequencies: ICLK={} MHz, PCLKA={} MHz, PCLKB={} MHz, PCLKC={} MHz, PCLKD={} MHz, FCLK={} MHz, BCLK={} MHz",
+        iclk.0 / 1_000_000,
+        pclka.0 / 1_000_000,
+        pclkb.0 / 1_000_000,
+        pclkc.0 / 1_000_000,
+        pclkd.0 / 1_000_000,
+        fclk.0 / 1_000_000,
+        bclk.0 / 1_000_000,
+    );
+
     // Validate frequencies
     assert!(iclk.0 <= MAX_ICLK_FREQ.0, "ICLK exceeds maximum frequency");
     assert!(pclka.0 <= MAX_PCLKA_FREQ.0, "PCLKA exceeds maximum frequency");
@@ -313,6 +223,33 @@ pub(crate) fn init(config: Config) -> Clocks {
         w.set_prkey(0xA5);  // Write key
         w.set_prc0(true);   // Enable writing to clock registers
     });
+
+    // Configure HOCO frequency if HOCO is selected or used by PLL
+    if matches!(config.source, ClockSource::Hoco) || 
+       (matches!(config.source, ClockSource::Pll) && matches!(config.pll.unwrap().source, PllSource::Hoco)) {
+        
+        // 00: 16 MHz, 01: 18 MHz, 10: 20 MHz
+        let hcfrq: u8 = match config.hoco_freq {
+            HocoFreq::Mhz16 => 0b00,
+            HocoFreq::Mhz18 => 0b01,
+            HocoFreq::Mhz20 => 0b10,
+            _ => 0b10, // Default to 20MHz for unsupported values
+        };
+        
+        // Ensure HOCO is operating
+        sysc.hococr().modify(|w| w.set_hcstp(false));
+         
+        // Set frequency
+        // Note: Writing to HOCOCR2 while HOCO is running is allowed on RA6
+        // HOCOCR2 is at offset +1 from HOCOCR (0x4001E037 vs 0x4001E036 on RA6M5)
+        // Since ra-metapac is missing hococr2 on some variants, we use raw pointer arithmetic.
+        unsafe {
+            let hococr_ptr = sysc.hococr().as_ptr() as *mut u8;
+            hococr_ptr.add(1).write_volatile(hcfrq);
+        }
+        
+        // TODO: Wait for stabilization if it was stopped
+    }
 
     // Configure SCKDIVCR (System Clock Division Control Register)
     sysc.sckdivcr().modify(|w| {

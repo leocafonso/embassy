@@ -5,7 +5,11 @@
 
 use core::convert::Infallible;
 use crate::{pac, Peripheral as PeripheralType, PeripheralRef as Peri};
-use pac::port::{Port, regs};
+use ra_metapac::port::{Port, regs};
+#[cfg(feature = "defmt")]
+use defmt::*;
+#[cfg(not(feature = "defmt"))]
+use log::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -85,6 +89,7 @@ fn pfs_unlock() {
         w.set_b0wi(false);
         w.set_pfswe(true);
     });
+    debug!("pwpr {}", pac::PFS.pwpr().read());
 }
 
 /// Lock PFS registers to prevent accidental writes
@@ -97,6 +102,7 @@ fn pfs_lock() {
         w.set_b0wi(true);
         w.set_pfswe(false);
     });
+    debug!("pwpr {}", pac::PFS.pwpr().read());
 }
 
 /// GPIO flexible pin.
@@ -145,6 +151,7 @@ impl<'d> Flex<'d> {
                 w.set_pdr(true);  // Output
                 w.set_pmr(false); // GPIO mode (not peripheral)
             });
+            debug!("pfs {}", pac::PFS.pmn_pfs(port_num as usize * 16 + pin as usize).read());
             pfs_lock();
         });
     }
