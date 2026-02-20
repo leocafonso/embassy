@@ -21,8 +21,9 @@
   "rust-analyzer.cargo.features": [],
   "rust-analyzer.linkedProjects": [
     // "embassy-ra/Cargo.toml",
-    //"examples/ra2e1/Cargo.toml",
+    // "examples/ra2e1/Cargo.toml",
     "examples/ra6e2/Cargo.toml",
+    // "examples/ra8m1/Cargo.toml",
     // To work on the examples, comment the line above and all of the cargo.features lines,
     // then uncomment ONE line below to select the chip you want to work on.
     // This makes rust-analyzer work on the example crate and all its dependencies.

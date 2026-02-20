@@ -62,6 +62,19 @@ fn get_time_driver_events(time_driver: Option<&str>) -> Vec<&'static Event> {
         return Vec::new();
     };
 
+    if time_driver.starts_with("AGT") {
+        let int = format!("{}_INT", time_driver);
+        let cmpa = format!("{}_COMPARE_A", time_driver);
+        let mut events = Vec::new();
+        if let Some(event) = find_event_by_name(&int) {
+            events.push(event);
+        }
+        if let Some(event) = find_event_by_name(&cmpa) {
+            events.push(event);
+        }
+        return events;
+    }
+
     let ovf = format!("{}_COUNTER_OVERFLOW", time_driver);
     let ccmpa = format!("{}_CAPTURE_COMPARE_A", time_driver);
 
@@ -127,6 +140,9 @@ fn main() {
         for i in 0..=13 {
             println!("cargo::rustc-check-cfg=cfg(time_driver_gpt{})", i);
         }
+        for i in 0..=1 {
+            println!("cargo::rustc-check-cfg=cfg(time_driver_agt{})", i);
+        }
 
         generate_memory_x(&out);
         generate_interrupt_bindings(&out, time_driver.as_deref());
@@ -142,6 +158,12 @@ fn get_time_driver_singleton() -> Option<String> {
         let feature = format!("CARGO_FEATURE_TIME_DRIVER_GPT{}", i);
         if env::var(&feature).is_ok() {
             return Some(format!("GPT{}", i));
+        }
+    }
+    for i in 0..=1 {
+        let feature = format!("CARGO_FEATURE_TIME_DRIVER_AGT{}", i);
+        if env::var(&feature).is_ok() {
+            return Some(format!("AGT{}", i));
         }
     }
     None
@@ -407,6 +429,20 @@ fn validate_time_driver_events(time_driver: Option<&str>, required_events: &[&Ev
     let Some(time_driver) = time_driver else {
         return;
     };
+
+    if time_driver.starts_with("AGT") {
+        let int = format!("{}_INT", time_driver);
+        let cmpa = format!("{}_COMPARE_A", time_driver);
+        let has_int = required_events.iter().any(|e| e.name == int);
+        let has_cmpa = required_events.iter().any(|e| e.name == cmpa);
+        if has_int && has_cmpa {
+            return;
+        }
+        panic!(
+            "Missing time driver events for {}. Need {} and {}.",
+            time_driver, int, cmpa
+        );
+    }
 
     let ovf = format!("{}_COUNTER_OVERFLOW", time_driver);
     let ccmpa = format!("{}_CAPTURE_COMPARE_A", time_driver);

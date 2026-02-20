@@ -56,6 +56,7 @@ time-driver-gpt0 = ["_time-driver"]
 time-driver-gpt1 = ["_time-driver"]
 time-driver-gpt2 = ["_time-driver"]
 time-driver-gpt3 = ["_time-driver"]
+time-driver-agt0 = ["_time-driver"]
 
 # Peripheral driver features
 sci-uart0 = []

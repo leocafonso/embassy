@@ -17,11 +17,11 @@ pub mod option_bytes;
 
 // RA2 family (RA2E1, RA2E2, RA2L1)
 #[cfg(any(ra2e1, ra2e2, ra2l1))]
-mod ra6;
+mod ra2;
 #[cfg(any(ra2e1, ra2e2, ra2l1))]
-pub use ra6::Config;
+pub use ra2::Config;
 #[cfg(any(ra2e1, ra2e2, ra2l1))]
-pub(crate) use ra6::init;
+pub(crate) use ra2::init;
 
 // RA4 family (RA4M1, RA4M2, RA4M3, RA4E1, RA4E2, RA4W1)
 #[cfg(any(ra4m1, ra4m2, ra4m3, ra4e1, ra4e2, ra4w1))]
@@ -150,11 +150,15 @@ pub enum HocoFreq {
     Mhz24,
     /// 32 MHz (RA2)
     Mhz32,
-    /// 48 MHz (RA2, RA4, RA6)
+    /// 48 MHz (RA2, RA4)
     #[default]
     Mhz48,
-    /// 64 MHz (RA4, RA6)
+    /// 64 MHz (RA4)
     Mhz64,
+    /// 16 MHz (RA6, RA8)
+    Mhz16,
+    /// 18 MHz (RA6, RA8)
+    Mhz18,
     /// 20 MHz (RA6, RA8)
     Mhz20,
 }
@@ -166,6 +170,8 @@ impl HocoFreq {
             HocoFreq::Mhz32 => 32_000_000,
             HocoFreq::Mhz48 => 48_000_000,
             HocoFreq::Mhz64 => 64_000_000,
+            HocoFreq::Mhz16 => 16_000_000,
+            HocoFreq::Mhz18 => 18_000_000,
             HocoFreq::Mhz20 => 20_000_000,
         }
     }
@@ -190,6 +196,69 @@ pub struct MainOscConfig {
     pub freq: Hertz,
     /// Oscillator mode
     pub mode: MainOscMode,
+}
+
+/// PLL input source
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PllSource {
+    /// Main oscillator
+    MainOsc,
+    /// HOCO
+    Hoco,
+}
+
+/// PLL input divider
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PllInputDiv {
+    Div1 = 0,
+    Div2 = 1,
+    Div3 = 2,
+    Div4 = 3,
+}
+
+/// PLL multiplier
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PllMul {
+    Mul10_0 = 0x13,
+    Mul10_5 = 0x14,
+    Mul11_0 = 0x15,
+    Mul11_5 = 0x16,
+    Mul12_0 = 0x17,
+    Mul12_5 = 0x18,
+    Mul20_0 = 0x27,
+    Mul20_5 = 0x28,
+}
+
+impl PllMul {
+    /// Get the actual multiplier value (x2 to avoid floats)
+    pub const fn value_x2(&self) -> u32 {
+        match self {
+            PllMul::Mul10_0 => 20,
+            PllMul::Mul10_5 => 21,
+            PllMul::Mul11_0 => 22,
+            PllMul::Mul11_5 => 23,
+            PllMul::Mul12_0 => 24,
+            PllMul::Mul12_5 => 25,
+            PllMul::Mul20_0 => 40,
+            PllMul::Mul20_5 => 41, 
+            // Matches will catch aliases automatically
+        }
+    }
+}
+
+/// PLL configuration
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct PllConfig {
+    /// PLL input source
+    pub source: PllSource,
+    /// PLL input divider (PLIDIV)
+    pub input_div: PllInputDiv,
+    /// PLL multiplier (PLLMUL)
+    pub mul: PllMul,
 }
 
 // ============================================================================

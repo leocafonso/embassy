@@ -1,9 +1,12 @@
 use crate::pac;
 use defmt::debug;
+use ra_metapac::mstp::Mstp;
+use ra_metapac::sysc::Sysc;
+
 
 // Use direct PAC constants instead of steal pattern
-fn mstp() -> pac::mstp::Mstp {
-    pac::MSTP
+fn mstp() -> Mstp{
+    ra_metapac::MSTP
 }
 
 #[cfg(any(
@@ -12,8 +15,8 @@ fn mstp() -> pac::mstp::Mstp {
     ra4m1, ra4w1,
     ra6m1, ra6m2, ra6m3, ra6t1
 ))]
-fn sysc() -> pac::sysc::Sysc {
-    pac::SYSC
+fn sysc() -> Sysc {
+    ra_metapac::SYSC
 }
 
 // ============================================================================
@@ -110,6 +113,7 @@ unsafe fn modify_mstpcrc(bit: u32, f: impl FnOnce(&mut u32)) {
 #[allow(unused_variables)]
 unsafe fn modify_mstpcrd(bit: u32, f: impl FnOnce(&mut u32)) {
     let mstp = mstp();
+    debug!("bit {}", bit);
     mstp.mstpcrd().modify(|w| {
         let mut val = w.0 as u32;
         f(&mut val);
@@ -117,6 +121,7 @@ unsafe fn modify_mstpcrd(bit: u32, f: impl FnOnce(&mut u32)) {
     });
     // Dummy read for synchronization
     let _ = mstp.mstpcrd().read();
+    debug!("MSTPCRD after modification: {:032b}", mstp.mstpcrd().read().0);
 }
 
 // ============================================================================

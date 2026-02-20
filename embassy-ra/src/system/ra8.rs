@@ -10,18 +10,12 @@
 //! Reference: RA8M1 Hardware Manual, Section 8 (Clocks)
 
 use crate::pac;
-use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig};
+use super::{Clocks, ClockDiv, ClockSource, Hertz, HocoFreq, MainOscConfig, MOCO_FREQ, LOCO_FREQ};
 
 // Use direct PAC access
 fn sysc() -> pac::sysc::Sysc {
     pac::SYSC
 }
-
-/// MOCO frequency (fixed at 8 MHz)
-pub const MOCO_FREQ: Hertz = Hertz(8_000_000);
-
-/// LOCO frequency (fixed at 32.768 kHz)
-pub const LOCO_FREQ: Hertz = Hertz(32_768);
 
 /// Maximum ICLK frequency for RA8
 pub const MAX_ICLK_FREQ: Hertz = Hertz(480_000_000);

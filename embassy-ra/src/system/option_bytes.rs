@@ -344,30 +344,8 @@ impl Ofs0 {
 // OFS1 - Option Function Select Register 1
 // ============================================================================
 // Contains: HOCO frequency, additional settings
-//
-// IMPORTANT: The HOCOFRQ bit field offset differs between families:
-// - RA2 family: Offset 12, Mask 0xFFFF8FFF (bits [14:12])
-// - RA6/RA4 family (M33 with TZ): Offset 9, Mask 0xFFFFF9FF (bits [10:9])
-// - RA8 family: Offset 9, Mask 0xFFFFF1FF (bits [11:9])
 
-/// HOCO frequency selection for OFS1
-///
-/// Note: Not all frequencies are available on all devices.
-/// Check the device datasheet for supported values.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-pub enum Ofs1HocoFreq {
-    /// 24 MHz
-    Mhz24 = 0b000,
-    /// 32 MHz (RA2 only)
-    Mhz32 = 0b010,
-    /// 48 MHz (default)
-    #[default]
-    Mhz48 = 0b100,
-    /// 64 MHz
-    Mhz64 = 0b101,
-}
+use super::HocoFreq;
 
 /// OFS1 register configuration
 ///
@@ -376,13 +354,13 @@ pub enum Ofs1HocoFreq {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Ofs1 {
     /// HOCO frequency selection
-    pub hoco_freq: Ofs1HocoFreq,
+    pub hoco_freq: HocoFreq,
 }
 
 impl Default for Ofs1 {
     fn default() -> Self {
         Self {
-            hoco_freq: Ofs1HocoFreq::Mhz48,
+            hoco_freq: HocoFreq::Mhz48,
         }
     }
 }
@@ -393,50 +371,82 @@ impl Ofs1 {
     /// RA2 OFS1 bit layout:
     /// - Bits [14:12]: HOCOFRQ - HOCO frequency selection
     /// - Mask: 0xFFFF8FFF, Offset: 12
+    ///   000: 24 MHz
+    ///   010: 32 MHz
+    ///   100: 48 MHz
+    ///   101: 64 MHz
     #[cfg(any(ra2e1, ra2e2, ra2l1))]
     pub const fn to_u32(&self) -> u32 {
+        let val_bits = match self.hoco_freq {
+            HocoFreq::Mhz24 => 0b000,
+            HocoFreq::Mhz32 => 0b010,
+            HocoFreq::Mhz48 => 0b100,
+            HocoFreq::Mhz64 => 0b101, // Note: Check datasheet if supported
+            _ => 0b100, // Default to 48MHz for unsupported values
+        };
+
         let mut val: u32 = 0xFFFF_FFFF;
         val &= 0xFFFF8FFF;  // Clear bits [14:12]
-        val |= (self.hoco_freq as u32) << 12;
+        val |= (val_bits as u32) << 12;
         val
     }
 
-    /// Convert configuration to raw register value for RA6/RA4 family (with TrustZone)
+    /// Convert configuration to raw register value for RA4 families (Standard HOCO)
     /// 
-    /// RA6E2/RA6M4/RA4E2 OFS1 bit layout:
-    /// - Bits [10:9]: HOCOFRQ - HOCO frequency selection
-    /// - Mask: 0xFFFFF9FF, Offset: 9
-    #[cfg(any(ra6e2, ra6m4, ra4e2, ra4m2, ra4m3))]
+    /// Mappings for RA4M1, RA4E1, RA4W1, RA4E2, RA4M2, RA4M3, and RA6M1/M2/M3:
+    /// - Bits [10:9]: HOCOFRQ
+    ///   00: 24 MHz
+    ///   01: 32 MHz
+    ///   10: 48 MHz
+    ///   11: 64 MHz
+    #[cfg(any(ra4m1, ra4e1, ra4w1, ra6m1, ra6m2, ra6m3, ra4e2, ra4m2, ra4m3))]
     pub const fn to_u32(&self) -> u32 {
+        let val_bits = match self.hoco_freq {
+            HocoFreq::Mhz24 => 0b00,
+            HocoFreq::Mhz32 => 0b01,
+            HocoFreq::Mhz48 => 0b10,
+            HocoFreq::Mhz64 => 0b11,
+            _ => 0b10, // Default to 48MHz
+        };
+
         let mut val: u32 = 0xFFFF_FFFF;
         val &= 0xFFFFF9FF;  // Clear bits [10:9]
-        val |= (self.hoco_freq as u32) << 9;
+        val |= (val_bits as u32) << 9;
         val
     }
 
-    /// Convert configuration to raw register value for RA6 family (without TrustZone)
-    /// 
-    /// RA6M3/RA6M1/RA6M2 OFS1 bit layout:
-    /// - Bits [10:9]: HOCOFRQ - HOCO frequency selection  
-    /// - Mask: 0xFFFFF9FF, Offset: 9
-    #[cfg(any(ra6m1, ra6m2, ra6m3))]
+    /// Convert configuration to raw register value for RA6/RA8 (High Speed/Specific HOCO)
+    ///
+    /// Mappings for RA6M4, RA6M5, RA6E2, RA8:
+    /// - Bits [10:9] (RA6) or [11:9] (RA8? check datasheet):
+    ///   00: 16 MHz
+    ///   01: 18 MHz
+    ///   10: 20 MHz
+    #[cfg(any(ra6m5, ra6m4, ra6e2, ra8m1, ra8d1, ra8e1, ra8t1))]
     pub const fn to_u32(&self) -> u32 {
-        let mut val: u32 = 0xFFFF_FFFF;
-        val &= 0xFFFFF9FF;  // Clear bits [10:9]
-        val |= (self.hoco_freq as u32) << 9;
-        val
-    }
+         // RA6: HOCO 16/18/20 MHz
+         // RA8: HOCO 16/18/20 MHz?
+         let val_bits = match self.hoco_freq {
+            HocoFreq::Mhz16 => 0b00,
+            HocoFreq::Mhz18 => 0b01,
+            HocoFreq::Mhz20 => 0b10,
+            // Add other mappings if HocoFreq enum supports 16/18 MHz
+            _ => 0b10, // Default to 20MHz
+        };
 
-    /// Convert configuration to raw register value for RA8 family
-    /// 
-    /// RA8M1/RA8D1 OFS1 bit layout:
-    /// - Bits [11:9]: HOCOFRQ - HOCO frequency selection
-    /// - Mask: 0xFFFFF1FF, Offset: 9
-    #[cfg(any(ra8m1, ra8d1, ra8e1, ra8t1))]
-    pub const fn to_u32(&self) -> u32 {
         let mut val: u32 = 0xFFFF_FFFF;
-        val &= 0xFFFFF1FF;  // Clear bits [11:9]
-        val |= (self.hoco_freq as u32) << 9;
+        // Padding/offsets might vary by family (RA8 uses bits 11:9?)
+        // For now using mask from original code for RA8
+        #[cfg(any(ra8m1, ra8d1, ra8e1, ra8t1))]
+        {
+            val &= 0xFFFFF1FF;
+            val |= (val_bits as u32) << 9;
+        }
+        #[cfg(not(any(ra8m1, ra8d1, ra8e1, ra8t1)))]
+        {
+            val &= 0xFFFFF9FF;
+            val |= (val_bits as u32) << 9;
+        }
         val
     }
 
@@ -445,12 +455,21 @@ impl Ofs1 {
         ra2e1, ra2e2, ra2l1,
         ra6e2, ra6m4, ra4e2, ra4m2, ra4m3,
         ra6m1, ra6m2, ra6m3,
+        ra6m5,
         ra8m1, ra8d1, ra8e1, ra8t1
     )))]
     pub const fn to_u32(&self) -> u32 {
+        let val_bits = match self.hoco_freq {
+            HocoFreq::Mhz24 => 0b000,
+            HocoFreq::Mhz32 => 0b010,
+            HocoFreq::Mhz48 => 0b100,
+            HocoFreq::Mhz64 => 0b101,
+            _ => 0b100,
+        };
+
         let mut val: u32 = 0xFFFF_FFFF;
         val &= 0xFFFF8FFF;  // Default to RA2 layout: bits [14:12]
-        val |= (self.hoco_freq as u32) << 12;
+        val |= (val_bits as u32) << 12;
         val
     }
 }
@@ -590,7 +609,7 @@ impl OptionBytes {
                 },
             },
             ofs1: Ofs1 {
-                hoco_freq: Ofs1HocoFreq::Mhz48,
+                hoco_freq: HocoFreq::Mhz48,
             },
             id_code: IdCode::unlocked(),
             sec_mpu: SecMpu::unrestricted(),
@@ -629,7 +648,7 @@ pub static __EMBASSY_RA_OFS0: u32 = Ofs0::disabled().to_u32();
 #[link_section = ".option_setting_ofs1"]
 #[used]
 #[no_mangle]
-pub static __EMBASSY_RA_OFS1: u32 = Ofs1 { hoco_freq: Ofs1HocoFreq::Mhz48 }.to_u32();
+pub static __EMBASSY_RA_OFS1: u32 = Ofs1 { hoco_freq: HocoFreq::Mhz48 }.to_u32();
 
 /// Default ID Code (OSIS) for RA2 family: Unlocked with padding
 #[cfg(any(ra2e1, ra2e2, ra2l1))]
@@ -656,13 +675,13 @@ pub static __EMBASSY_RA_SECMPU: [u32; 4] = SecMpu::unrestricted().values;
 #[no_mangle]
 pub static __EMBASSY_RA_OFS0: u32 = Ofs0::disabled().to_u32();
 
-/// Default OFS1_SEC for RA6 TZ family: 48 MHz HOCO
+/// Default OFS1_SEC for RA6 TZ family: 20 MHz HOCO
 /// Note: RA6 with TZ uses OFS1_SEC section
 #[cfg(any(ra6e2, ra6m4, ra6m5))]
 #[link_section = ".option_setting_ofs1_sec"]
 #[used]
 #[no_mangle]
-pub static __EMBASSY_RA_OFS1_SEC: u32 = Ofs1 { hoco_freq: Ofs1HocoFreq::Mhz48 }.to_u32();
+pub static __EMBASSY_RA_OFS1_SEC: u32 = Ofs1 { hoco_freq: HocoFreq::Mhz20 }.to_u32();
 
 /// Default BPS_SEC for RA6 TZ family: No block protection
 #[cfg(any(ra6e2, ra6m4, ra6m5))]
@@ -701,7 +720,7 @@ pub static __EMBASSY_RA_OFS0: u32 = Ofs0::disabled().to_u32();
 #[link_section = ".option_setting_ofs1"]
 #[used]
 #[no_mangle]
-pub static __EMBASSY_RA_OFS1: u32 = Ofs1 { hoco_freq: Ofs1HocoFreq::Mhz48 }.to_u32();
+pub static __EMBASSY_RA_OFS1: u32 = Ofs1 { hoco_freq: HocoFreq::Mhz48 }.to_u32();
 
 // ----------------------------------------------------------------------------
 // RA4 Family Defaults (RA4M1, RA4E1, RA4W1 - no TrustZone)
@@ -719,4 +738,4 @@ pub static __EMBASSY_RA_OFS0: u32 = Ofs0::disabled().to_u32();
 #[link_section = ".option_setting_ofs1"]
 #[used]
 #[no_mangle]
-pub static __EMBASSY_RA_OFS1: u32 = Ofs1 { hoco_freq: Ofs1HocoFreq::Mhz48 }.to_u32();
+pub static __EMBASSY_RA_OFS1: u32 = Ofs1 { hoco_freq: HocoFreq::Mhz48 }.to_u32();
