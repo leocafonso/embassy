@@ -39,7 +39,8 @@ async fn main(_spawner: Spawner) {
     info!("Hello World!");
 
     // Create LED output on P104
-    let mut led = Output::new(p.P207, Level::Low);
+    //let mut led = Output::new(p.P207, Level::Low);
+    let mut led = Output::new(p.P008, Level::Low);
 
     loop {
         info!("high");

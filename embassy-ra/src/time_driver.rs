@@ -2,17 +2,25 @@
 ///
 /// # Design
 ///
-/// AGT0 is a 16-bit **down-counter** that:
-///   - Counts from the reload value (0xFFFF) down to 0x0000
+/// AGT0 is a 16-bit or 32-bit (AGTW) **down-counter** that:
+///   - Counts from the reload value (0xFFFF / 0xFFFF_FFFF) down to 0
 ///   - On underflow reloads automatically and fires AGT0_INT
 ///   - Has a Compare Match A register (AGTCMA) that fires AGT0_COMPARE_A when
 ///     the counter == AGTCMA value
 ///
+/// ## Counter width
+///
+/// The AGT counter width varies by chip family:
+/// - **16-bit** (RA0, RA2, most RA4 series): `type Counter = u16`, period = 2^16 ticks
+/// - **32-bit** (RA6E2, some RA8 series): `type Counter = u32`, period = 2^32 ticks
+///
+/// `build.rs` reads the `version` field of the AGT0 peripheral from the chip
+/// metadata and emits `cfg(agt_counter_16bit)` or `cfg(agt_counter_32bit)`.
+///
 /// ## Time representation
 ///
-/// We define one *period* = 2^15 ticks (half of the 16-bit range), mirroring
-/// the mspm0 driver approach.  The 16-bit AGT counter runs from 0xFFFF down;
-/// `calc_now` converts (period, counter) into a monotonic u64.
+/// One *period* = 2^`PERIOD_SHIFT` ticks (the full counter range).
+/// `calc_now` converts (period, raw_counter) into a monotonic u64.
 ///
 /// ## Interrupts
 ///
@@ -35,6 +43,32 @@ use ra_metapac::agt::Agt;
 use ra_metapac::icu::Icu;
 
 use crate::{interrupt, mstp, pac, peripherals};
+
+// ============================================================================
+// Counter-width selection (driven by build.rs from PAC metadata)
+// ============================================================================
+
+/// Native register type of the AGT counter for this chip.
+/// Resolved at build time from the peripheral `version` field:
+///   "16bits" → `u16`   (RA0, RA2, most RA4)
+///   "32bits" → `u32`   (RA6E2, some RA8)
+#[cfg(agt_counter_16bit)]
+type Counter = u16;
+#[cfg(agt_counter_32bit)]
+type Counter = u32;
+
+/// Maximum counter value (= reload value).  Also the period in ticks minus one.
+#[cfg(agt_counter_16bit)]
+const COUNTER_MAX: u64 = 0xFFFF;
+#[cfg(agt_counter_32bit)]
+const COUNTER_MAX: u64 = 0xFFFF_FFFF;
+
+/// Bit-shift used to pack/unpack (period, offset) from a u64 timestamp.
+/// Equal to the bit width of the counter.
+#[cfg(agt_counter_16bit)]
+const PERIOD_SHIFT: u32 = 16;
+#[cfg(agt_counter_32bit)]
+const PERIOD_SHIFT: u32 = 32;
 
 use defmt::*;
 
@@ -108,15 +142,16 @@ const _: () = {
 
 /// Convert (period, raw AGT down-counter value) → monotonic tick count.
 ///
-/// AGT underflows every 65536 ticks, so one period = 65536 ticks.
-///   elapsed_in_period = 0xFFFF - counter   (0 … 65535)
-///   now = period * 65536 + elapsed
+/// AGT underflows every (COUNTER_MAX + 1) ticks, so one period = 2^PERIOD_SHIFT ticks.
+///   elapsed_in_period = COUNTER_MAX - counter   (0 … COUNTER_MAX)
+///   now = (period << PERIOD_SHIFT) | elapsed
 ///
+/// `counter` must already be cast to `u64` before calling.
 /// The retry loop in `now()` handles the race between reading `period` and
 /// reading `counter` without needing a mutex or XOR trick.
 #[inline]
-fn calc_now(period: u32, counter: u16) -> u64 {
-    ((period as u64) << 16) | (0xFFFFu16.wrapping_sub(counter)) as u64
+fn calc_now(period: u32, counter: u64) -> u64 {
+    ((period as u64) << PERIOD_SHIFT) | (COUNTER_MAX - counter)
 }
 
 // ============================================================================
@@ -124,7 +159,8 @@ fn calc_now(period: u32, counter: u16) -> u64 {
 // ============================================================================
 
 struct TimxDriver {
-    /// Number of 2^15-tick periods elapsed since boot.
+    /// Number of full counter periods elapsed since boot.
+    /// Each period = 2^PERIOD_SHIFT ticks (65536 for 16-bit, 2^32 for 32-bit AGT).
     period: AtomicU32,
     /// Alarm timestamp in ticks.  u64::MAX = no alarm pending.
     alarm: Mutex<Cell<u64>>,
@@ -150,39 +186,29 @@ impl Driver for TimxDriver {
             let period = self.period.load(Ordering::Relaxed);
             compiler_fence(Ordering::Acquire);
             // AGT.agt() read returns the live counter (down-counting).
-            let counter = r.agt().read();
+            // Cast to u64 here so calc_now works for both u16 and u32 AGT variants.
+            let counter = r.agt().read() as u64;
             compiler_fence(Ordering::Acquire);
             let period2 = self.period.load(Ordering::Relaxed);
             if period == period2 {
                 let now = calc_now(period, counter);
                 if retries > 0 {
-                    debug!("now() retried {} times: period={} counter={} -> {}", retries, period, counter, now);
-                } else {
-                    debug!("now() period={} counter={} -> {}", period, counter, now);
-                }
+                } 
                 return now;
             }
             retries += 1;
-            debug!("now() retry #{}: period={} != period2={}", retries, period, period2);
             // Period bumped while reading → retry.
         }
     }
 
     fn schedule_wake(&self, at: u64, waker: &core::task::Waker) {
-        debug!("schedule_wake: at={}", at);
         critical_section::with(|cs| {
             let mut queue = self.queue.borrow(cs).borrow_mut();
             if queue.schedule_wake(at, waker) {
-                debug!("schedule_wake: queue updated, calling next_expiration");
                 let mut next = queue.next_expiration(self.now());
-                debug!("schedule_wake: next_expiration returned {}", next);
                 while !self.set_alarm(cs, next) {
-                    debug!("schedule_wake: set_alarm returned false, retrying");
                     next = queue.next_expiration(self.now());
-                    debug!("schedule_wake: next_expiration returned {}", next);
                 }
-            } else {
-                debug!("schedule_wake: queue.schedule_wake returned false (no rearm needed)");
             }
         });
     }
@@ -209,17 +235,18 @@ impl TimxDriver {
 
         // 3. Timer mode, AGTLCLK source (/1) → 32.768 kHz ticks.
         r.agtmr1().write(|w| {
-            w.set_tmod(ra_metapac::agt::vals::Tmod::from_bits(1)); // timer mode
+            w.set_tmod(ra_metapac::agt::vals::Tmod::from_bits(0)); // timer mode
             w.set_tck(ra_metapac::agt::vals::Tck::from_bits(4));   // AGTLCLK
         });
         r.agtmr2().write(|w| {
             w.set_cks(ra_metapac::agt::vals::Cks::from_bits(0)); // /1
         });
 
-        // 4. Write reload value.  Per the RA2E1 manual: "the write value is
+        // 4. Write reload value.  Per the hardware manual: "the write value is
         //    written to the reload register; the read value is read from the
-        //    counter."  Writing 0xFFFF makes the counter start at 0xFFFF.
-        r.agt().write_value(0xFFFF);
+        //    counter."  Writing COUNTER_MAX makes the counter start at its
+        //    maximum value (0xFFFF for 16-bit, 0xFFFF_FFFF for 32-bit).
+        r.agt().write_value(COUNTER_MAX as Counter);
 
         // 5. AGTCMSR = 0: Compare Match A disabled at startup.
         r.agtcmsr().write(|w| w.0 = 0);
@@ -260,14 +287,11 @@ impl TimxDriver {
 
         critical_section::with(|cs| {
             let at = self.alarm.borrow(cs).get();
-            // AGTCMA writes are buffered: the compare register is loaded at the
-            // underflow.  Enable TCMEA one period before alarm_period so the
-            // buffered AGTCMA value is clocked in at the underflow from
-            // (alarm_period-1) → alarm_period, and CmpA fires in alarm_period.
-            let alarm_period = (at >> 16) as u32;
-            let enable = alarm_period > 0 && period == alarm_period - 1;
-            debug!("next_period: period={} alarm_at={} alarm_period={} enable={}",
-                   period, at, alarm_period, enable);
+            // Re-enable Compare Match A when we enter the period the alarm
+            // belongs to.  set_alarm wrote AGTCMA directly (counter was stopped),
+            // so there is no buffer delay to compensate for.
+            let alarm_period = (at >> PERIOD_SHIFT) as u32;
+            let enable = alarm_period == period;
             if enable {
                 r.agtcmsr().modify(|w| {
                     w.set_tcmea(ra_metapac::agt::vals::Tcmea::from_bits(1))
@@ -298,27 +322,34 @@ impl TimxDriver {
         }
 
         // AGTCMA value = 0xFFFF - (timestamp % 65536).
-        // This is the counter value at which Compare Match A fires within the
-        // alarm's period.  `timestamp & 0xFFFF` == `timestamp % 65536`.
-        let target_counter = 0xFFFFu16.wrapping_sub((timestamp & 0xFFFF) as u16);
-        r.agtcma().write_value(target_counter);
-        debug!("set_alarm: AGTCMA={} (ts={} & 0xFFFF = {})",
-               target_counter, timestamp, timestamp & 0xFFFF);
+        // Per the RA2E1 manual, writes to AGTCMA while counting go to a reload
+        // buffer and only take effect at the next underflow.  To write directly
+        // to the compare register we must stop the counter first (TSTART=0).
+        // The CPU is far faster than the 32.768 kHz count clock, so the
+        // stop+restart window is ≤ 2 count-clock cycles (~61 µs = ~2 ticks).
+        r.agtcr().modify(|w| {
+            w.set_tstart(ra_metapac::agt::vals::Tstart::from_bits(0))
+        });
+        // Wait until the counter actually stops (synchronises to count clock).
+        while r.agtcr().read().tcstf() == ra_metapac::agt::vals::Tcstf::from_bits(1) {}
 
-        // AGTCMA writes while the counter is running are buffered: they only
-        // take effect at the next underflow (per the RA2E1 manual).
-        // So CmpA will actually fire in period (alarm_period), but the compare
-        // register is loaded at the underflow from (alarm_period-1) → alarm_period.
-        // We must enable TCMEA one period *before* alarm_period so the buffer
-        // flushes at the right underflow.
+        // AGTCMA = COUNTER_MAX - (timestamp mod (COUNTER_MAX+1))
+        // This is the counter value at which Compare Match A fires.
+        let target_counter = (COUNTER_MAX - (timestamp & COUNTER_MAX)) as Counter;
+        r.agtcma().write_value(target_counter);
+
+        // Restart the counter.  From this point the compare register holds the
+        // value we just wrote — no buffer delay.
+        r.agtcr().modify(|w| {
+            w.set_tstart(ra_metapac::agt::vals::Tstart::from_bits(1))
+        });
+
+        // Enable CmpA only when the alarm falls in the current period.
+        // next_period() will enable it if the alarm is further out.
         let current_period = self.period.load(Ordering::Relaxed);
-        let alarm_period   = (timestamp >> 16) as u32;
-        // TCMEA should be on whenever current_period == alarm_period - 1
-        // (so it arms at the next underflow) OR if alarm_period == 0 (edge case).
-        let enable_now = alarm_period > 0 && current_period == alarm_period - 1
-            || alarm_period == 0 && current_period == 0;
-        debug!("set_alarm: ts={} alarm_period={} cur_period={} tcmea={}",
-               timestamp, alarm_period, current_period, enable_now);
+        let alarm_period   = (timestamp >> PERIOD_SHIFT) as u32;
+        let enable_now = alarm_period == current_period;
+
         r.agtcmsr().modify(|w| {
             w.set_tcmea(ra_metapac::agt::vals::Tcmea::from_bits(
                 if enable_now { 1 } else { 0 },
@@ -329,7 +360,6 @@ impl TimxDriver {
         // writing AGTCMA?
         let t2 = self.now();
         if timestamp <= t2 {
-            debug!("set_alarm: RACE - timestamp {} <= t2 {}, disarming", timestamp, t2);
             self.disarm(cs);
             return false;
         }
@@ -350,14 +380,10 @@ impl TimxDriver {
     /// Called from the Compare Match A ISR: fire expired wakers, re-arm.
     fn trigger_alarm(&self, cs: CriticalSection) {
         let now = self.now();
-        debug!("trigger_alarm: now={}", now);
         let mut next = self.queue.borrow(cs).borrow_mut().next_expiration(now);
-        debug!("trigger_alarm: next_expiration={}", next);
         while !self.set_alarm(cs, next) {
             let now2 = self.now();
-            debug!("trigger_alarm: retry now={}", now2);
             next = self.queue.borrow(cs).borrow_mut().next_expiration(now2);
-            debug!("trigger_alarm: next_expiration={}", next);
         }
     }
 }
@@ -375,7 +401,6 @@ pub(crate) unsafe fn on_interrupt() {
     let r = regs();
 
     if irq == agt_cfg::INT_IRQ as usize {
-        debug!("IRQ: Underflow (slot {})", irq);
         // Underflow: clear TUNDF, advance period.
         r.agtcr().modify(|w| {
             w.set_tundf(ra_metapac::agt::vals::Tundf::from_bits(0))
@@ -383,7 +408,6 @@ pub(crate) unsafe fn on_interrupt() {
         DRIVER.next_period();
     } else if irq == agt_cfg::CMPA_IRQ as usize {
         // Compare Match A: disable match, clear flag, fire alarm.
-        debug!("IRQ: Compare Match A (slot {})", irq);
         r.agtcmsr().modify(|w| {
             w.set_tcmea(ra_metapac::agt::vals::Tcmea::from_bits(0))
         });
