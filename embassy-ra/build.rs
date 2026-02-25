@@ -144,6 +144,27 @@ fn main() {
             println!("cargo::rustc-check-cfg=cfg(time_driver_agt{})", i);
         }
 
+        // Declare AGT counter-width cfgs so rustc does not warn about them.
+        println!("cargo::rustc-check-cfg=cfg(agt_counter_16bit)");
+        println!("cargo::rustc-check-cfg=cfg(agt_counter_32bit)");
+
+        // If an AGT peripheral is the time driver, emit the counter-width cfg
+        // based on the `version` field in the chip metadata ("16bits"/"32bits").
+        if let Some(ref driver) = time_driver {
+            if driver.starts_with("AGT") {
+                for p in metadata::METADATA.peripherals {
+                    if p.name == driver.as_str() && p.kind == "agt" {
+                        match p.version {
+                            "16bits" => println!("cargo:rustc-cfg=agt_counter_16bit"),
+                            "32bits" => println!("cargo:rustc-cfg=agt_counter_32bit"),
+                            v => panic!("unknown AGT version '{}' for peripheral '{}'", v, p.name),
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
         generate_memory_x(&out);
         generate_interrupt_bindings(&out, time_driver.as_deref());
         generate_peripherals(&out, time_driver.as_deref());
