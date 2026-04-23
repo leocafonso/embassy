@@ -77,7 +77,7 @@ impl Default for Config {
         // Default: HOCO @ 20 MHz, no dividers
         Self {
             source: ClockSource::Hoco,
-            hoco_freq: HocoFreq::Mhz20,
+            hoco_freq: crate::EMBASSY_RA_HOCO_FREQ,
             main_osc: None,
             pll: None,
             pll2: None,
