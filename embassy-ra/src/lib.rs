@@ -13,6 +13,10 @@ pub mod system;
 // Include auto-generated peripherals definitions
 // This expands to: pub mod peripherals { ... with GPT0, Peripherals, etc. }
 include!(concat!(env!("OUT_DIR"), "/peripherals.rs"));
+
+// Include auto-generated option bytes statics (OFS0/OFS1).
+// HOCO frequency is selected via the hoco-* Cargo feature (default: family-appropriate).
+include!(concat!(env!("OUT_DIR"), "/option_bytes.rs"));
 // Re-export for convenient access
 pub use peripherals::*;
 

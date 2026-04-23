@@ -8,6 +8,7 @@ use embassy_ra as hal;
 use hal::gpio::{Output, Level};
 use {defmt_rtt as _, panic_probe as _};
 
+
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = hal::init(Default::default());

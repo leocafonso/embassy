@@ -118,7 +118,7 @@ pub(crate) fn init(config: Config) -> Clocks {
              // For RA2, HOCO frequency is set in Option Bytes (OFS1 at 0x0000_0408)
              // Bits [14:12] determine frequency
              // 000: 24MHz, 010: 32MHz, 100: 48MHz, 101: 64MHz
-             let ofs1 = unsafe { *(0x0000_0408 as *const u32) };
+             let ofs1 = unsafe { *(0x0000_0404 as *const u32) };
              match (ofs1 >> 12) & 0b111 {
                  0b000 => Hertz(24_000_000),
                  0b010 => Hertz(32_000_000),

@@ -58,6 +58,15 @@ time-driver-gpt2 = ["_time-driver"]
 time-driver-gpt3 = ["_time-driver"]
 time-driver-agt0 = ["_time-driver"]
 
+# HOCO frequency selection — pick at most one; family default used if none selected
+hoco-24mhz = []
+hoco-32mhz = []
+hoco-48mhz = []
+hoco-64mhz = []
+hoco-16mhz = []
+hoco-18mhz = []
+hoco-20mhz = []
+
 # Peripheral driver features
 sci-uart0 = []
 sci-uart1 = []
