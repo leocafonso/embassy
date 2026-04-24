@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 embassy-ra = { path = "../../embassy-ra", features = ["r7fa8m1ahecbd", "defmt", "time-driver-gpt0", "gpio"] }
-embassy-executor = { path = "../../embassy-executor", features = ["arch-cortex-m", "executor-thread", "defmt"] }
+embassy-executor = { path = "../../embassy-executor", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { path = "../../embassy-time", features = ["defmt", "tick-hz-8_000_000"] }
 
 cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
