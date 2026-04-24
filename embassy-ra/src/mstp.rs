@@ -1,7 +1,6 @@
 use crate::pac;
 use defmt::debug;
 use ra_metapac::mstp::Mstp;
-use ra_metapac::sysc::Sysc;
 
 
 // Use direct PAC constants instead of steal pattern

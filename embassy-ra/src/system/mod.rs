@@ -75,6 +75,7 @@ pub(crate) unsafe fn set_freqs(freqs: Clocks) {
 ///
 /// # Safety
 /// Reads a mutable global. Must only be called after `set_freqs`.
+#[allow(dead_code)]
 pub(crate) unsafe fn get_freqs() -> &'static Clocks {
     (*core::ptr::addr_of_mut!(CLOCK_FREQS)).assume_init_ref()
 }

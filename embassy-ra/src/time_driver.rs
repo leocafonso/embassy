@@ -70,7 +70,6 @@ const PERIOD_SHIFT: u32 = 16;
 #[cfg(agt_counter_32bit)]
 const PERIOD_SHIFT: u32 = 32;
 
-use defmt::*;
 
 // Include auto-generated IRQ bindings from build.rs
 include!(concat!(env!("OUT_DIR"), "/irq_bindings.rs"));
